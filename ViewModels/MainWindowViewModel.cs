@@ -250,9 +250,11 @@ namespace GoldenSpinner.ViewModels
         private void MoveUp()
         {
             if (SelectedSlice == null) return;
-            var idx = Slices.IndexOf(SelectedSlice);
+            var idx   = Slices.IndexOf(SelectedSlice);
             if (idx <= 0) return;
+            var slice = SelectedSlice;          // hold reference before Move
             Slices.Move(idx, idx - 1);
+            SelectedSlice = slice;              // re-assert — ListBox can clear it on CollectionChanged
             NotifyMoveCanExecuteChanged();
         }
 
@@ -260,9 +262,11 @@ namespace GoldenSpinner.ViewModels
         private void MoveDown()
         {
             if (SelectedSlice == null) return;
-            var idx = Slices.IndexOf(SelectedSlice);
+            var idx   = Slices.IndexOf(SelectedSlice);
             if (idx < 0 || idx >= Slices.Count - 1) return;
+            var slice = SelectedSlice;
             Slices.Move(idx, idx + 1);
+            SelectedSlice = slice;
             NotifyMoveCanExecuteChanged();
         }
 

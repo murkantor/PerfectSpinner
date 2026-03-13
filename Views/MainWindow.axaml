@@ -189,7 +189,7 @@
                         <StackPanel Orientation="Horizontal" Spacing="6">
                             <TextBox Text="{Binding SelectedSlice.ColorHex}"
                                      Watermark="#RRGGBB"
-                                     MaxLength="9" />
+                                     Width="110" MaxLength="9" />
                             <!-- Swatch button — click to open colour picker flyout -->
                             <Button Padding="3" ToolTip.Tip="Pick slice colour">
                                 <Border Width="32" Height="26" CornerRadius="3"
@@ -198,7 +198,7 @@
                                         BorderBrush="{DynamicResource SystemControlForegroundBaseMediumBrush}"
                                         BorderThickness="1" />
                                 <Button.Flyout>
-                                    <Flyout Placement="Left">
+                                    <Flyout Placement="Bottom">
                                         <ColorView Color="{Binding SelectedSlice.ColorHex,
                                                            Mode=TwoWay,
                                                            Converter={StaticResource ColorToHex}}"
