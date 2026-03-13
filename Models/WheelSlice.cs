@@ -22,7 +22,10 @@ namespace GoldenSpinner.Models
         /// <summary>Background color as a CSS hex string, e.g. "#E74C3C".</summary>
         public string ColorHex { get; set; } = "#E74C3C";
 
-        /// <summary>Relative weight for weighted spinning (reserved for future use).</summary>
+        /// <summary>Relative weight for weighted spinning. 0 = auto-hidden from wheel.</summary>
         public double Weight { get; set; } = 1.0;
+
+        /// <summary>User-toggled. True = participates in the wheel. False = excluded.</summary>
+        public bool IsActive { get; set; } = true;
     }
 }

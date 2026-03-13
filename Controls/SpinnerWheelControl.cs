@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.ComponentModel;
@@ -42,6 +43,9 @@ namespace GoldenSpinner.Controls
         public static readonly StyledProperty<int> WinnerIndexProperty =
             AvaloniaProperty.Register<SpinnerWheelControl, int>(nameof(WinnerIndex), -1);
 
+        public static readonly StyledProperty<bool> UseWeightedSlicesProperty =
+            AvaloniaProperty.Register<SpinnerWheelControl, bool>(nameof(UseWeightedSlices), true);
+
         // ── Property accessors ───────────────────────────────────────────────
 
         public ObservableCollection<WheelSliceViewModel>? Slices
@@ -62,11 +66,17 @@ namespace GoldenSpinner.Controls
             set => SetValue(WinnerIndexProperty, value);
         }
 
+        public bool UseWeightedSlices
+        {
+            get => GetValue(UseWeightedSlicesProperty);
+            set => SetValue(UseWeightedSlicesProperty, value);
+        }
+
         // ── Static constructor – wire up AffectsRender ───────────────────────
 
         static SpinnerWheelControl()
         {
-            AffectsRender<SpinnerWheelControl>(RotationAngleProperty, WinnerIndexProperty);
+            AffectsRender<SpinnerWheelControl>(RotationAngleProperty, WinnerIndexProperty, UseWeightedSlicesProperty);
         }
 
         // ── Property change tracking ─────────────────────────────────────────
@@ -141,7 +151,7 @@ namespace GoldenSpinner.Controls
             // ── Rotating layer (slices) ──────────────────────────────────────
             using (ctx.PushTransform(rotMatrix))
             {
-                DrawSlices(ctx, center, radius, slices);
+                DrawSlices(ctx, center, radius, slices, UseWeightedSlices);
             }
 
             // ── Fixed layer (drawn on top, no rotation) ──────────────────────
@@ -153,17 +163,35 @@ namespace GoldenSpinner.Controls
         // ── Slice drawing ─────────────────────────────────────────────────────
 
         private void DrawSlices(DrawingContext ctx, Point center, double radius,
-            IList<WheelSliceViewModel> slices)
+            IList<WheelSliceViewModel> slices, bool useWeightedSlices)
         {
-            var n = slices.Count;
-            var sliceRad = 2 * Math.PI / n;
+            // Weighted mode: exclude inactive slices AND zero-weight slices (0-arc slices).
+            // Unweighted mode: exclude only inactive slices; weight value is ignored.
+            var active = new List<WheelSliceViewModel>();
+            foreach (var s in slices)
+                if (s.IsActive && (!useWeightedSlices || s.Weight > 0)) active.Add(s);
+
+            if (active.Count == 0)
+            {
+                DrawEmptyWheel(ctx, center, radius);
+                return;
+            }
+
+            double totalWeight = useWeightedSlices
+                ? active.Sum(s => s.Weight)
+                : active.Count;
+            if (totalWeight <= 0) totalWeight = active.Count;
+
             var borderPen = new Pen(Brushes.White, 2);
             var winnerPen = new Pen(new SolidColorBrush(Color.Parse("#FFD700")), 4);  // gold highlight
 
+            double startAngle = -Math.PI / 2;
+            var n = active.Count;
             for (int i = 0; i < n; i++)
             {
-                var slice = slices[i];
-                var startAngle = -Math.PI / 2 + i * sliceRad;
+                var slice    = active[i];
+                double w     = useWeightedSlices ? slice.Weight : 1.0;
+                var sliceRad = (w / totalWeight) * 2 * Math.PI;
                 var endAngle = startAngle + sliceRad;
                 var midAngle = startAngle + sliceRad / 2;
 
@@ -172,8 +200,8 @@ namespace GoldenSpinner.Controls
                 try { color = Color.Parse(slice.ColorHex); }
                 catch { color = Color.Parse("#808080"); }
 
-                // Slightly darken the winner slice to distinguish it
-                bool isWinner = i == WinnerIndex;
+                // Highlight winner — WinnerIndex is an index into the full Slices collection.
+                bool isWinner = slices.IndexOf(slice) == WinnerIndex;
                 IBrush fill = isWinner
                     ? new SolidColorBrush(Lighten(color, 0.2f))
                     : new SolidColorBrush(color);
@@ -188,6 +216,8 @@ namespace GoldenSpinner.Controls
                 // Text label
                 if (!string.IsNullOrEmpty(slice.Label))
                     DrawSliceLabel(ctx, slice.Label, center, radius, midAngle, n);
+
+                startAngle = endAngle;
             }
         }
 

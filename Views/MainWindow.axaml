@@ -102,6 +102,36 @@
 
                 <Separator />
 
+                <!-- ── Weights ───────────────────────────────────────────── -->
+                <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                    <TextBlock Text="Weights" FontWeight="SemiBold" VerticalAlignment="Center" />
+                    <CheckBox IsChecked="{Binding UseWeightedSlices}"
+                              Content="Use weighted slices"
+                              VerticalAlignment="Center" />
+                </StackPanel>
+                <TextBlock Text="Set a default weight and apply to all slices. After each spin the winner's weight drops by 1 (min 1)."
+                           FontSize="11" TextWrapping="Wrap"
+                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+
+                <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="6">
+                    <TextBlock Grid.Column="0" Text="Default:"
+                               VerticalAlignment="Center" />
+                    <NumericUpDown Grid.Column="1"
+                                   Value="{Binding GlobalWeight}"
+                                   Minimum="1" Maximum="100" Increment="1"
+                                   FormatString="F0" />
+                    <Button Grid.Column="2"
+                            Content="Apply to All"
+                            Command="{Binding ApplyWeightToAllCommand}"
+                            Padding="8,4" />
+                    <Button Grid.Column="3"
+                            Content="Undo"
+                            Command="{Binding UndoWeightCommand}"
+                            Padding="8,4" />
+                </Grid>
+
+                <Separator />
+
                 <!-- ── Layout I/O ──────────────────────────────────────── -->
                 <TextBlock Text="Layout" FontWeight="SemiBold" />
                 <StackPanel Orientation="Horizontal" Spacing="8">
@@ -150,10 +180,18 @@
                     <ListBox.ItemTemplate>
                         <DataTemplate x:DataType="vm:WheelSliceViewModel">
                             <StackPanel Orientation="Horizontal" Spacing="8" Margin="2">
+                                <CheckBox IsChecked="{Binding IsActive}"
+                                          ToolTip.Tip="Include in wheel"
+                                          VerticalAlignment="Center" />
                                 <Border Width="20" Height="20" CornerRadius="3"
                                         Background="{Binding ColorHex, Converter={StaticResource HexColorToBrush}}"
                                         VerticalAlignment="Center" />
                                 <TextBlock Text="{Binding Label}" VerticalAlignment="Center" />
+                                <TextBlock Text="(inactive)" FontSize="10"
+                                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                                           IsVisible="{Binding !IsActive}"
+                                           VerticalAlignment="Center"/>
+
                             </StackPanel>
                         </DataTemplate>
                     </ListBox.ItemTemplate>
@@ -195,6 +233,13 @@
                                 </Button.Flyout>
                             </Button>
                         </StackPanel>
+
+                        <TextBlock Text="Weight:" Margin="0,4,0,0" />
+                        <NumericUpDown Value="{Binding SelectedSlice.Weight}"
+                                       Minimum="0" Maximum="100" Increment="1"
+                                       FormatString="F0" />
+
+                        <Separator Margin="0,6,0,2" />
 
                         <TextBlock Text="Image:" Margin="0,4,0,0" />
                         <TextBlock Text="{Binding SelectedSlice.ImagePath}"

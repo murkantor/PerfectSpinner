@@ -29,7 +29,8 @@
                 Width="600" Height="600"
                 Slices="{Binding Slices}"
                 RotationAngle="{Binding CurrentRotation}"
-                WinnerIndex="{Binding WinnerIndex}" />
+                WinnerIndex="{Binding WinnerIndex}"
+                UseWeightedSlices="{Binding UseWeightedSlices}" />
         </Viewbox>
 
         <!-- Winner banner — overlaid at the bottom, hidden when empty -->

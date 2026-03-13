@@ -28,6 +28,17 @@ namespace GoldenSpinner.ViewModels
         /// </summary>
         [ObservableProperty] private Bitmap? _loadedBitmap;
 
+        /// <summary>Relative weight for weighted spinning.</summary>
+        [ObservableProperty] private double _weight = 1.0;
+
+        /// <summary>
+        /// Whether this slice participates in the wheel.
+        /// Ticked = active (shown). Unticked = inactive (excluded).
+        /// Automatically set to false when Weight drops to 0.
+        /// </summary>
+        [ObservableProperty] private bool _isActive = true;
+
+
         // ── Identity ──────────────────────────────────────────────────────────
 
         public string Id { get; } = Guid.NewGuid().ToString();
@@ -39,9 +50,11 @@ namespace GoldenSpinner.ViewModels
         /// <summary>Constructs a ViewModel from a deserialized model and loads the bitmap.</summary>
         public WheelSliceViewModel(WheelSlice model)
         {
-            _label = model.Label;
+            _label    = model.Label;
             _colorHex = model.ColorHex;
             _soundPath = model.SoundPath;
+            _weight   = Math.Max(0.0, model.Weight);
+            _isActive = model.IsActive;
             // Use the property setter so the bitmap is loaded immediately.
             ImagePath = model.ImagePath;
         }
@@ -71,12 +84,13 @@ namespace GoldenSpinner.ViewModels
         /// <summary>Creates a serialisable <see cref="WheelSlice"/> from the current state.</summary>
         public WheelSlice ToModel() => new()
         {
-            Id = Id,
-            Label = Label,
-            ColorHex = ColorHex,
+            Id        = Id,
+            Label     = Label,
+            ColorHex  = ColorHex,
             ImagePath = ImagePath,
             SoundPath = SoundPath,
-            Weight = 1.0
+            Weight    = Weight,
+            IsActive  = IsActive
         };
     }
 }

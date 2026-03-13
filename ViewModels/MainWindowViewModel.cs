@@ -62,9 +62,26 @@ namespace GoldenSpinner.ViewModels
         /// </summary>
         [ObservableProperty] private string _chromaKeyColor = "#00B140";
 
+        /// <summary>
+        /// The weight value applied to all slices when the user clicks "Apply to All".
+        /// </summary>
+        [ObservableProperty] private double _globalWeight = 3.0;
+
+        /// <summary>
+        /// When true slices are sized and selected proportionally to their Weight.
+        /// When false all active slices are treated as equal weight.
+        /// </summary>
+        [ObservableProperty] private bool _useWeightedSlices = true;
+
         // ── Derived ───────────────────────────────────────────────────────────
 
         public bool HasSelectedSlice => SelectedSlice != null;
+
+        // ── Weight snapshot (for Undo before a spin) ─────────────────────────
+
+        // Snapshot is set by ApplyWeightToAll and cleared after a spin completes.
+        // Undo is only valid while the snapshot exists (i.e. before the next spin).
+        private double[]? _weightSnapshot;
 
         // ── Physics animation state ───────────────────────────────────────────
         //
@@ -125,6 +142,7 @@ namespace GoldenSpinner.ViewModels
         private bool CanMoveDown() => SelectedSlice != null && Slices.IndexOf(SelectedSlice) < Slices.Count - 1;
         private bool HasSelectionImagePath() => SelectedSlice?.ImagePath != null;
         private bool HasSelectionSoundPath() => SelectedSlice?.SoundPath != null;
+        private bool CanUndoWeight() => _weightSnapshot != null;
 
         // ── Commands ──────────────────────────────────────────────────────────
 
@@ -185,18 +203,44 @@ namespace GoldenSpinner.ViewModels
 
             if (_spinCancelled) return;
 
-            // Winner = slice under the pointer at rest.
-            var n            = Slices.Count;
-            var sliceDeg     = 360.0 / n;
+            // Winner = active slice under the pointer at rest (weighted cumulative angles).
+            // Only slices with IsActive (not hidden, weight > 0) participate.
+            var activeSlices = Slices
+                .Where(s => s.IsActive && (!UseWeightedSlices || s.Weight > 0))
+                .ToList();
+            if (activeSlices.Count == 0) return;
+
             var pointerAngle = ((360.0 - CurrentRotation % 360.0) % 360.0 + 360.0) % 360.0;
-            var winnerIdx    = (int)(pointerAngle / sliceDeg) % n;
 
-            var winner = Slices[winnerIdx];
-            WinnerIndex   = winnerIdx;
-            WinnerMessage = $"🎉  {winner.Label}!";
+            // Weighted: slice arc ∝ weight. Unweighted: equal arcs.
+            double totalWeight = UseWeightedSlices
+                ? activeSlices.Sum(s => s.Weight)
+                : activeSlices.Count;
 
-            if (!string.IsNullOrEmpty(winner.SoundPath))
-                _audioService.PlaySound(winner.SoundPath);
+            var winnerSlice = activeSlices[activeSlices.Count - 1];
+            double cumDeg = 0.0;
+            for (int i = 0; i < activeSlices.Count; i++)
+            {
+                double w = UseWeightedSlices ? activeSlices[i].Weight : 1.0;
+                cumDeg += (w / totalWeight) * 360.0;
+                if (pointerAngle < cumDeg) { winnerSlice = activeSlices[i]; break; }
+            }
+
+            WinnerIndex   = Slices.IndexOf(winnerSlice);
+            WinnerMessage = $"🎉  {winnerSlice.Label}!";
+
+            // Weight deduction and auto-deactivation only apply in weighted mode.
+            if (UseWeightedSlices)
+            {
+                winnerSlice.Weight = Math.Max(0.0, winnerSlice.Weight - 1.0);
+                if (winnerSlice.Weight <= 0)
+                    winnerSlice.IsActive = false;
+                _weightSnapshot = null;
+                UndoWeightCommand.NotifyCanExecuteChanged();
+            }
+
+            if (!string.IsNullOrEmpty(winnerSlice.SoundPath))
+                _audioService.PlaySound(winnerSlice.SoundPath);
         }
 
         [RelayCommand]
@@ -345,6 +389,28 @@ namespace GoldenSpinner.ViewModels
             WinnerIndex = -1;
             SelectedSlice = Slices.FirstOrDefault();
             SpinWheelCommand.NotifyCanExecuteChanged();
+        }
+
+        [RelayCommand]
+        private void ApplyWeightToAll()
+        {
+            // Save current weights so the user can undo.
+            _weightSnapshot = Slices.Select(s => s.Weight).ToArray();
+            UndoWeightCommand.NotifyCanExecuteChanged();
+
+            foreach (var slice in Slices)
+                slice.Weight = Math.Max(1.0, GlobalWeight);
+        }
+
+        [RelayCommand(CanExecute = nameof(CanUndoWeight))]
+        private void UndoWeight()
+        {
+            if (_weightSnapshot == null) return;
+            for (int i = 0; i < Math.Min(Slices.Count, _weightSnapshot.Length); i++)
+                Slices[i].Weight = _weightSnapshot[i];
+
+            _weightSnapshot = null;
+            UndoWeightCommand.NotifyCanExecuteChanged();
         }
 
         // ── Animation tick ────────────────────────────────────────────────────

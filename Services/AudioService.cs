@@ -1,18 +1,24 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using NAudio.Wave;
 
 namespace GoldenSpinner.Services
 {
     /// <summary>
-    /// Cross-platform audio playback using system audio tools.
-    /// Windows  – PowerShell SoundPlayer (WAV) or shell-open (MP3)
+    /// Audio playback service.
+    /// Windows  – NAudio (WaveOutEvent + AudioFileReader): supports WAV and MP3
+    ///            natively using Windows' built-in codecs, no extra processes.
     /// macOS    – afplay (WAV + MP3)
     /// Linux    – aplay (WAV) / mpg123 (MP3); install packages as needed
-    /// For richer cross-platform MP3 support consider adding LibVLCSharp.
     /// </summary>
     public sealed class AudioService : IDisposable
     {
+        // ── Windows playback (NAudio) ─────────────────────────────────────────
+        private WaveOutEvent? _waveOut;
+        private WaveStream?   _reader;
+
+        // ── macOS / Linux playback (external process) ─────────────────────────
         private Process? _currentProcess;
 
         /// <summary>Plays the file at <paramref name="path"/> asynchronously (fire-and-forget).</summary>
@@ -40,27 +46,40 @@ namespace GoldenSpinner.Services
         /// <summary>Stops any currently playing sound.</summary>
         public void StopCurrent()
         {
+            // Stop NAudio playback
+            _waveOut?.Stop();
+            _waveOut?.Dispose();
+            _waveOut = null;
+            _reader?.Dispose();
+            _reader = null;
+
+            // Stop process-based playback (macOS / Linux)
             try { _currentProcess?.Kill(entireProcessTree: true); } catch { }
             _currentProcess?.Dispose();
             _currentProcess = null;
         }
 
+        // ── Platform implementations ──────────────────────────────────────────
+
         private void PlayWindows(string path)
         {
-            var ext = Path.GetExtension(path).ToLowerInvariant();
+            // AudioFileReader handles both WAV and MP3 (and more) using Windows
+            // built-in ACM/Media Foundation codecs — no external process needed.
+            _reader  = new AudioFileReader(path);
+            _waveOut = new WaveOutEvent();
+            _waveOut.Init(_reader);
 
-            if (ext == ".wav")
-            {
-                // Use PowerShell's built-in SoundPlayer for WAV (no extra packages needed)
-                var escaped = path.Replace("'", "''");
-                _currentProcess = StartProcess("powershell.exe",
-                    $"-NoProfile -NonInteractive -Command \"(New-Object Media.SoundPlayer '{escaped}').PlaySync()\"");
-            }
-            else
-            {
-                // Shell-open MP3/other formats with the default media player
-                _currentProcess = StartProcess("cmd.exe", $"/c start \"\" /b \"{path}\"");
-            }
+            // Clean up automatically when playback finishes naturally.
+            _waveOut.PlaybackStopped += OnPlaybackStopped;
+            _waveOut.Play();
+        }
+
+        private void OnPlaybackStopped(object? sender, StoppedEventArgs e)
+        {
+            _waveOut?.Dispose();
+            _waveOut = null;
+            _reader?.Dispose();
+            _reader = null;
         }
 
         private void PlayLinux(string path)
@@ -68,7 +87,7 @@ namespace GoldenSpinner.Services
             var ext = Path.GetExtension(path).ToLowerInvariant();
             var (cmd, args) = ext == ".mp3"
                 ? ("mpg123", $"\"{path}\"")
-                : ("aplay", $"\"{path}\"");
+                : ("aplay",  $"\"{path}\"");
             _currentProcess = StartProcess(cmd, args);
         }
 
@@ -78,10 +97,10 @@ namespace GoldenSpinner.Services
             {
                 return Process.Start(new ProcessStartInfo(filename, arguments)
                 {
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
+                    UseShellExecute        = false,
+                    CreateNoWindow         = true,
                     RedirectStandardOutput = true,
-                    RedirectStandardError = true
+                    RedirectStandardError  = true
                 });
             }
             catch (Exception ex)

@@ -41,6 +41,7 @@ The folder on disk is named `GoldenSpinner` but the application title shown in t
    `{Binding ..., Converter={x:Static SomeConverters.Property}}`.
 4. The `x:DataType` must exactly match the C# type (including nullability) of whatever object
    will be the `DataContext` at runtime.
+5. Bool negation in bindings is supported: `{Binding !IsActive}`.
 
 ### NuGet packages in use
 
@@ -51,10 +52,18 @@ The folder on disk is named `GoldenSpinner` but the application title shown in t
 | `Avalonia.Themes.Fluent` | 11.3.11 | Microsoft Fluent Design theme |
 | `Avalonia.Fonts.Inter` | 11.3.11 | Inter font (used by `.WithInterFont()`) |
 | `Avalonia.Diagnostics` | 11.3.11 | Dev-tools overlay (Debug builds only) |
+| `Avalonia.Controls.ColorPicker` | 11.3.11 | `ColorView` control used in colour flyouts |
 | `CommunityToolkit.Mvvm` | 8.2.1 | Source-generated MVVM boilerplate |
+| `NAudio` | 2.2.1 | In-process WAV + MP3 playback on Windows |
 
-No additional packages. Do **not** add ReactiveUI — the project deliberately uses
-CommunityToolkit only.
+Do **not** add ReactiveUI — the project deliberately uses CommunityToolkit only.
+
+`Avalonia.Controls.ColorPicker` is a **separate package** from core Avalonia. Its styles
+must be explicitly included in `App.axaml`:
+```xml
+<StyleInclude Source="avares://Avalonia.Controls.ColorPicker/Themes/Fluent/Fluent.xaml" />
+```
+Without this line `ColorView` renders as a grey rectangle (no error is thrown).
 
 ---
 
@@ -71,7 +80,7 @@ The app runs as **two separate windows** that share one `MainWindowViewModel`:
 │  • SPIN + ↺ Reset buttons    │     │  • SpinnerWheelControl (full)    │
 │  • Speed + Friction controls │     │  • Winner banner overlay         │
 │  • Chroma key colour picker  │     │  • Background = ChromaKeyColor   │
-│  • Show Spinner Window btn   │     │                                  │
+│  • Weights section           │     │                                  │
 │  • Save / Load layout        │     │  In OBS: Window Capture source   │
 │  • Full slice editor         │     │  + Chroma Key filter             │
 └──────────────┬───────────────┘     └──────────────────────────────────┘
@@ -97,11 +106,10 @@ The app runs as **two separate windows** that share one `MainWindowViewModel`:
 - On startup both windows are positioned **side by side, centred on the primary display**
   in the `Opened` event (deferred because `Screens.Primary` is only queryable after the
   window is visible). Logical sizes are converted to physical pixels via `screen.Scaling`.
-- The "Show Spinner Window" button in Settings calls `Activate()` (bring to front) if the
-  window is already visible, or `Show()` if it has been minimised.
-- **Mutual activation** — clicking or focusing either window brings both to the front.
-  Wired via `Activated` events on both windows in `MainWindow.axaml.cs`. A
-  `_activatingPair` bool guard prevents the two handlers triggering each other in a loop.
+- **Mutual z-raise** — clicking either window brings both to the front via Win32
+  `SetWindowPos(SWP_NOACTIVATE)`. This raises the other window's Z-order without stealing
+  focus, which was the root cause of controls requiring multiple clicks (old `Activate()`
+  call stole focus mid-click before `PointerReleased` completed).
 
 ## Architecture diagram
 
@@ -125,16 +133,17 @@ The app runs as **two separate windows** that share one `MainWindowViewModel`:
 │  Services                                   │
 │  IFilePickerService / WindowFilePickerService│
 │  LayoutService                              │
-│  AudioService                               │
+│  AudioService  (NAudio on Windows)          │
 └─────────────────────────────────────────────┘
 
 Controls/SpinnerWheelControl  ← custom Avalonia Control
-  receives Slices + RotationAngle + WinnerIndex via StyledProperties
+  receives Slices + RotationAngle + WinnerIndex + UseWeightedSlices via StyledProperties
   calls InvalidateVisual() → Render(DrawingContext) every ~16 ms during spin
 
 Models/WheelSlice + WheelLayout  ← plain C#, JSON-serialisable
 
-Converters/HexColorToBrushConverter  ← IValueConverter for AXAML
+Converters/HexColorToBrushConverter  ← IValueConverter for AXAML (one-way)
+Converters/ColorToHexConverter       ← IValueConverter for AXAML (two-way, for ColorView)
 ```
 
 Data always flows **down**: Models → ViewModels → View. The View never touches
@@ -165,23 +174,26 @@ Do **not** add `.UseReactiveUI()` here — we use CommunityToolkit, not Reactive
 
 ### `App.axaml`
 
-**Application-level resources and styles.** Two important things happen here:
+**Application-level resources and styles.** Three important things happen here:
 
 1. **FluentTheme** is declared — this provides all default control styles (buttons,
    text boxes, list boxes, etc.). Without it the app renders unstyled.
 
-2. **`HexColorToBrushConverter`** is registered as an application-level resource:
+2. **Global converters** are registered as application-level resources:
    ```xml
    <conv:HexColorToBrushConverter x:Key="HexColorToBrush"/>
+   <conv:ColorToHexConverter      x:Key="ColorToHex"/>
    ```
-   This makes `{StaticResource HexColorToBrush}` available in every `.axaml` file in
-   the project without redeclaring it. If you add more global converters, register them
-   here.
+   These make both converters available via `{StaticResource ...}` in every `.axaml` file.
 
-3. **`ViewLocator`** is in `Application.DataTemplates`. It is a leftover from the
-   Avalonia MVVM template and is harmless. It automatically finds a View class for any
-   ViewModel (by replacing "ViewModel" with "View" in the type name). This project does
-   not currently use it for navigation but it should stay in case it is needed later.
+3. **ColorPicker styles** are explicitly included:
+   ```xml
+   <StyleInclude Source="avares://Avalonia.Controls.ColorPicker/Themes/Fluent/Fluent.xaml" />
+   ```
+   Without this, `ColorView` renders as a grey rectangle.
+
+4. **`ViewLocator`** is in `Application.DataTemplates` — leftover from the Avalonia MVVM
+   template. Harmless; kept for potential future navigation use.
 
 ---
 
@@ -189,28 +201,18 @@ Do **not** add `.UseReactiveUI()` here — we use CommunityToolkit, not Reactive
 
 **Application bootstrap.** The `OnFrameworkInitializationCompleted` override:
 
-1. Calls `DisableAvaloniaDataAnnotationValidation()` to prevent duplicate validation
-   errors that would occur because both Avalonia and CommunityToolkit.Mvvm validate
-   `[Required]` / `[Range]` etc. annotations. Without this you get double error messages.
-
-2. Creates `new MainWindow()` — note it does **not** set `DataContext`. The reason is
-   that `MainWindow`'s constructor must create `WindowFilePickerService(this)` before
-   the ViewModel can be constructed. Letting `MainWindow` build its own ViewModel keeps
-   the construction order correct.
+1. Calls `DisableAvaloniaDataAnnotationValidation()` to prevent duplicate validation errors.
+2. Creates `new MainWindow()` — does **not** set `DataContext`. `MainWindow`'s constructor
+   builds its own ViewModel because `WindowFilePickerService(this)` needs `this` first.
 
 ---
 
 ### `ViewLocator.cs`
 
-**Convention-based View resolver.** Implements `IDataTemplate` (registered in
-`App.axaml`). When Avalonia encounters a ViewModel as a content object, it asks
-registered `IDataTemplate`s whether they can handle it. `ViewLocator.Match` returns
-`true` for any `ViewModelBase` subclass, then `Build` swaps `"ViewModel"` → `"View"`
-in the full type name and activates the View type via reflection.
-
-**Current usage:** This is not actively used by the app (there is only one window)
-but is kept because it is part of the standard Avalonia MVVM template and enables
-future navigation scenarios without extra wiring.
+**Convention-based View resolver.** Implements `IDataTemplate`. `ViewLocator.Match`
+returns `true` for any `ViewModelBase` subclass; `Build` swaps `"ViewModel"` → `"View"`
+and activates the View type via reflection. Not actively used (single-window app) but
+kept for future navigation.
 
 ---
 
@@ -218,23 +220,18 @@ future navigation scenarios without extra wiring.
 
 **Pure data model — no Avalonia or UI dependencies.**
 
-Properties:
-| Property | Type | Purpose |
-|----------|------|---------|
-| `Id` | `string` (GUID) | Stable identity across save/load |
-| `Label` | `string` | Text displayed inside the slice |
-| `ImagePath` | `string?` | Absolute filesystem path to PNG/JPG, or null |
-| `SoundPath` | `string?` | Absolute filesystem path to WAV/MP3, or null |
-| `ColorHex` | `string` | CSS hex colour string, e.g. `"#E74C3C"` |
-| `Weight` | `double` | Reserved for weighted-random spinning (always 1.0 now) |
+| Property | Type | Default | Purpose |
+|----------|------|---------|---------|
+| `Id` | `string` (GUID) | new GUID | Stable identity across save/load |
+| `Label` | `string` | `"Slice"` | Text displayed inside the slice |
+| `ImagePath` | `string?` | null | Absolute path to PNG/JPG, or null |
+| `SoundPath` | `string?` | null | Absolute path to WAV/MP3, or null |
+| `ColorHex` | `string` | `"#E74C3C"` | CSS hex colour, e.g. `"#E74C3C"` |
+| `Weight` | `double` | `1.0` | Relative weight for proportional spinning |
+| `IsActive` | `bool` | `true` | Whether the slice participates in the wheel |
 
-This class is serialised/deserialised verbatim by `LayoutService` using
-`System.Text.Json` with `camelCase` naming policy. The JSON on disk uses camelCase keys
-(`"imagePath"`, not `"ImagePath"`).
-
-**Important:** asset paths are stored as-is (absolute). If the user moves images or the
-layout file to a different machine, paths will break. There is no asset-embedding or
-relative-path resolution.
+Serialised by `LayoutService` using `System.Text.Json` with `camelCase` naming policy.
+Asset paths are stored as absolute paths — they break if the user moves files.
 
 ---
 
@@ -242,89 +239,95 @@ relative-path resolution.
 
 **Root container for a saved wheel.** Serialised to a single `.json` file.
 
-Properties:
 | Property | Type | Default | Purpose |
 |----------|------|---------|---------|
-| `Name` | `string` | `"My Wheel"` | Display name (not currently shown in UI) |
+| `Name` | `string` | `"My Wheel"` | Display name |
 | `Slices` | `List<WheelSlice>` | empty | Ordered list of all slices |
-| `SpinDurationSeconds` | `double` | `4.0` | Spin animation length in seconds |
-
-The slice order in the list is the slice order on the wheel (slice 0 starts at 12 o'clock).
+| `SpinDurationSeconds` | `double` | `4.0` | Spin animation length (maps to "Speed" in UI) |
 
 ---
 
 ### `ViewModels/ViewModelBase.cs`
 
-**Abstract base for all ViewModels.** Inherits from `CommunityToolkit.Mvvm.ComponentModel.ObservableObject`.
-
-`ObservableObject` provides:
-- `INotifyPropertyChanged` and `INotifyPropertyChanging` implementations
-- `SetProperty<T>(ref T field, T value)` for change-raising setters
-- Support for CommunityToolkit's source-generation attributes (`[ObservableProperty]`, etc.)
-
-All ViewModel classes in this project must inherit `ViewModelBase` (not `ObservableObject`
-directly) so that `ViewLocator.Match` can identify them.
+**Abstract base for all ViewModels.** Inherits `CommunityToolkit.Mvvm.ComponentModel.ObservableObject`.
+All ViewModel classes must inherit `ViewModelBase` so `ViewLocator.Match` can identify them.
 
 ---
 
 ### `ViewModels/WheelSliceViewModel.cs`
 
-**Observable wrapper around `WheelSlice`.** This is what the UI and the wheel control
-actually bind to. It is a `partial class` — required for CommunityToolkit source generation.
+**Observable wrapper around `WheelSlice`.** A `partial class` required for CommunityToolkit
+source generation.
 
 **Generated properties** (from `[ObservableProperty]` fields):
+
 | Field | Generated Property | Type | Notes |
 |-------|--------------------|------|-------|
 | `_label` | `Label` | `string` | Shown in the slice and the list |
 | `_colorHex` | `ColorHex` | `string` | CSS hex, e.g. `"#3498DB"` |
 | `_imagePath` | `ImagePath` | `string?` | Setting this triggers `OnImagePathChanged` |
 | `_soundPath` | `SoundPath` | `string?` | Path to audio file |
-| `_loadedBitmap` | `LoadedBitmap` | `Bitmap?` | Set internally; never bound in AXAML directly |
+| `_loadedBitmap` | `LoadedBitmap` | `Bitmap?` | Set internally by `OnImagePathChanged` |
+| `_weight` | `Weight` | `double` | Relative weight; used when `UseWeightedSlices` is on |
+| `_isActive` | `IsActive` | `bool` | User-toggled; tick = on wheel, untick = excluded |
 
-**Key behaviour — `OnImagePathChanged`:**
-This `partial void` method is called automatically by the CommunityToolkit source
-generator whenever `ImagePath` is set. It:
-1. Calls `Dispose()` on any previously loaded `Bitmap` to release memory / file handle.
-2. Returns early if the new path is null, empty, or the file does not exist on disk.
-3. Tries to construct `new Bitmap(value)` (Avalonia bitmap from file path).
-4. Logs to `Debug.WriteLine` on failure (does not throw).
+**`IsActive` behaviour:**
+- Purely user-controlled via the checkbox in the slice list (tick = active).
+- Auto-set to `false` by `MainWindowViewModel` post-spin when `UseWeightedSlices` is ON
+  and the winner's weight deducts to 0.
+- Weight editing alone does **not** auto-change `IsActive` — that is intentional so that
+  turning off `UseWeightedSlices` makes weights completely inert.
 
-This means the wheel control always has a ready-to-draw `LoadedBitmap` without any
-async image loading infrastructure.
+**`OnImagePathChanged`:**
+Called automatically whenever `ImagePath` is set. Disposes previous bitmap, loads new one
+from disk into `LoadedBitmap`. Logs on failure; does not throw.
 
-**`ToModel()`:**
-Converts back to a plain `WheelSlice` for serialisation. Call this when saving a layout.
-The `LoadedBitmap` field is intentionally not included — it is transient runtime state.
+**`ToModel()`:** Converts to plain `WheelSlice` for serialisation. `LoadedBitmap` is excluded.
 
 **Constructors:**
-- Parameterless `WheelSliceViewModel()` — used when the user clicks "Add Slice".
-- `WheelSliceViewModel(WheelSlice model)` — used when loading a layout from JSON. Sets
-  fields directly (bypassing source-generated setters for `_label`, `_colorHex`,
-  `_soundPath` to avoid redundant change notifications) but uses the **property setter**
-  for `ImagePath` so the bitmap loads immediately.
+- Parameterless — used when the user clicks "Add Slice".
+- `WheelSliceViewModel(WheelSlice model)` — used when loading from JSON.
 
 ---
 
 ### `ViewModels/MainWindowViewModel.cs`
 
-**The heart of the application.** A `partial class` that inherits `ViewModelBase`.
-All application logic lives here; the view has no logic.
+**The heart of the application.** A `partial class` inheriting `ViewModelBase`.
 
 #### Observable state
 
 | Property | Type | Purpose |
 |----------|------|---------|
-| `Slices` | `ObservableCollection<WheelSliceViewModel>` | The ordered list of slices shown on the wheel |
-| `SelectedSlice` | `WheelSliceViewModel?` | Currently selected slice in the editor panel |
-| `CurrentRotation` | `double` | Current wheel rotation in degrees. Drives the `SpinnerWheelControl` |
-| `WinnerIndex` | `int` | Index of the winning slice (-1 = no winner yet). Used by the control to highlight the winner |
-| `WinnerMessage` | `string` | Banner text shown on the SpinnerWindow after spinning (not shown in Settings) |
-| `SpinDurationSeconds` | `decimal` | Labelled "Speed" in the UI. Controls peak angular velocity: `Speed × 180 °/s`. Higher = faster wheel and longer free-spin coast. Property name kept for save-file compatibility |
-| `Friction` | `int` | 1–10. Free-spin friction rate. 1 = near-frictionless long coast; 10 = stops quickly. Decay rate = `0.20 + (Friction-1) × 0.28` per second |
+| `Slices` | `ObservableCollection<WheelSliceViewModel>` | Ordered list of slices on the wheel |
+| `SelectedSlice` | `WheelSliceViewModel?` | Currently selected slice in the editor |
+| `CurrentRotation` | `double` | Wheel rotation in degrees; drives `SpinnerWheelControl` |
+| `WinnerIndex` | `int` | Index of winning slice (-1 = none); used for gold highlight |
+| `WinnerMessage` | `string` | Banner text shown on SpinnerWindow after spin |
+| `SpinDurationSeconds` | `decimal` | Labelled "Speed" in UI. Peak velocity = Speed × 180 °/s |
+| `Friction` | `int` | 1–10. Free-spin friction rate. Decay = `0.20 + (Friction-1) × 0.28` /s |
+| `ChromaKeyColor` | `string` | CSS hex for SpinnerWindow background (OBS chroma key) |
+| `GlobalWeight` | `double` | Default weight value for "Apply to All" |
+| `UseWeightedSlices` | `bool` | When true: proportional slice sizing + post-spin deduction |
 
-`HasSelectedSlice` is a plain computed property (not `[ObservableProperty]`) that returns
-`SelectedSlice != null`. It is refreshed by `[NotifyPropertyChangedFor(nameof(HasSelectedSlice))]`
-on `_selectedSlice`.
+#### Slice weighting system
+
+`UseWeightedSlices` is the master switch:
+
+**When ON:**
+- Slices render proportionally to their `Weight` value.
+- Winner determination uses weighted cumulative angles.
+- After each spin, the winner's `Weight` is deducted by 1 (min 0).
+- If weight reaches 0, `IsActive` is set to `false` (auto-untick).
+- `_weightSnapshot` is saved by `ApplyWeightToAll` for undo support; cleared after spin.
+
+**When OFF:**
+- All `IsActive=true` slices render at equal size regardless of weight.
+- No weight is deducted after a spin.
+- No slice is auto-deactivated.
+- Weight values are stored and editable but completely ignored at runtime.
+
+`_weightSnapshot` — `double[]?` saved when "Apply to All" is clicked. `UndoWeightCommand`
+restores it; the command is disabled when no snapshot exists (`CanUndoWeight()`).
 
 #### CanExecute cascade on `SelectedSlice`
 
@@ -339,31 +342,29 @@ on `_selectedSlice`.
 [NotifyCanExecuteChangedFor(nameof(AssignSoundCommand))]
 [NotifyCanExecuteChangedFor(nameof(RemoveSoundCommand))]
 ```
-Whenever `SelectedSlice` changes, all of the above commands automatically re-evaluate
-their `CanExecute` state. This is what enables/disables the editor buttons without any
-manual wiring.
 
 #### Commands
 
 | Source method | Generated command | CanExecute | Notes |
 |---------------|-------------------|------------|-------|
-| `SpinWheelAsync()` | `SpinWheelCommand` | `CanSpinWheel()` — `Slices.Count >= 1` | `AsyncRelayCommand`; button stays disabled for the entire animation because the task does not complete until the `DispatcherTimer` fires `_spinTcs.SetResult()` |
-| `AddSlice()` | `AddSliceCommand` | always enabled | Picks next palette colour; auto-selects new slice |
+| `SpinWheelAsync()` | `SpinWheelCommand` | `Slices.Count >= 1` | AsyncRelayCommand; stays disabled for entire animation |
+| `ResetWheel()` | `ResetWheelCommand` | always | Stops animation, resets rotation and winner |
+| `AddSlice()` | `AddSliceCommand` | always | Picks next palette colour; auto-selects new slice |
 | `RemoveSlice()` | `RemoveSliceCommand` | `HasSelection()` | Selects neighbour after removal |
-| `MoveUp()` | `MoveUpCommand` | `CanMoveUp()` | Calls `Slices.Move(idx, idx-1)` |
-| `MoveDown()` | `MoveDownCommand` | `CanMoveDown()` | Calls `Slices.Move(idx, idx+1)` |
-| `AssignImageAsync()` | `AssignImageCommand` | `HasSelection()` | Opens image file picker; sets `SelectedSlice.ImagePath` |
-| `RemoveImage()` | `RemoveImageCommand` | `HasSelectionImagePath()` | Nulls `SelectedSlice.ImagePath` |
+| `MoveUp()` | `MoveUpCommand` | `CanMoveUp()` | `Slices.Move(idx, idx-1)` |
+| `MoveDown()` | `MoveDownCommand` | `CanMoveDown()` | `Slices.Move(idx, idx+1)` |
+| `AssignImageAsync()` | `AssignImageCommand` | `HasSelection()` | Opens image file picker |
+| `RemoveImage()` | `RemoveImageCommand` | `HasSelectionImagePath()` | Nulls `ImagePath` |
 | `AssignSoundAsync()` | `AssignSoundCommand` | `HasSelection()` | Opens audio file picker |
-| `RemoveSound()` | `RemoveSoundCommand` | `HasSelectionSoundPath()` | Nulls `SelectedSlice.SoundPath` |
-| `SaveLayoutAsync()` | `SaveLayoutCommand` | always enabled | Opens save dialog, calls `LayoutService.SaveAsync` |
-| `LoadLayoutAsync()` | `LoadLayoutCommand` | always enabled | Opens load dialog, rebuilds `Slices` from model |
-| `ResetWheel()` | `ResetWheelCommand` | always enabled | Stops any in-progress animation, sets `CurrentRotation = 0`, clears winner state |
+| `RemoveSound()` | `RemoveSoundCommand` | `HasSelectionSoundPath()` | Nulls `SoundPath` |
+| `SaveLayoutAsync()` | `SaveLayoutCommand` | always | Opens save dialog, calls `LayoutService.SaveAsync` |
+| `LoadLayoutAsync()` | `LoadLayoutCommand` | always | Opens load dialog, rebuilds `Slices` from model |
+| `ApplyWeightToAll()` | `ApplyWeightToAllCommand` | always | Saves snapshot, applies `GlobalWeight` to all slices |
+| `UndoWeight()` | `UndoWeightCommand` | `CanUndoWeight()` | Restores `_weightSnapshot`; disabled when no snapshot |
 
 **CommunityToolkit naming rules:**
 - Method `SpinWheelAsync` → command `SpinWheelCommand` (strips `Async` suffix, appends `Command`)
 - Method `AddSlice` → command `AddSliceCommand`
-- Method `AssignImageAsync` → command `AssignImageCommand`
 
 #### Spin animation deep dive — physics model
 
@@ -376,8 +377,8 @@ advances `CurrentRotation` by `_currentVelocity × dt`. The winner is read from
 1. Sets physics parameters from `SpinDurationSeconds` (Speed) and `Friction`.
 2. Creates `_spinTcs` and starts the `DispatcherTimer` (~60 fps).
 3. `await _spinTcs.Task` — SPIN button stays disabled for the entire physics simulation.
-4. After await: reads `CurrentRotation`, calculates which slice is under the pointer,
-   sets `WinnerIndex` / `WinnerMessage`, plays winner sound.
+4. After await: filters active slices, calculates winner using weighted or equal angles,
+   sets `WinnerIndex` / `WinnerMessage`, plays winner sound, optionally deducts weight.
 
 #### Five animation phases
 
@@ -385,10 +386,10 @@ All time boundaries are in seconds from `_animStart`. `totalDuration = SpinDurat
 
 | Phase | Time window | Velocity behaviour |
 |-------|-------------|-------------------|
-| 1 Wind-up | `0 → _windUpDuration` (random 2–5 % of total) | Ease-in **backwards** to `−_windUpSpeed` (60 °/s) — the "grab and pull" feel |
-| 2 Acceleration | `_windUpDuration → _accelEndTime` (10 % of total) | `Lerp(−windUpSpeed, peakVelocity, t²)` — ease-in from reverse through zero to peak |
+| 1 Wind-up | `0 → _windUpDuration` (random 2–5 % of total) | Ease-in **backwards** to `−60 °/s` |
+| 2 Acceleration | `_windUpDuration → _accelEndTime` (10 % of total) | `Lerp(−windUpSpeed, peakVelocity, t²)` |
 | 3 Cruise | `_accelEndTime → _fullSpeedEndTime` (10–80 %) | Constant `_peakVelocity` |
-| 4 Engine off | `_fullSpeedEndTime → _halfSpeedEndTime` (80–100 %) | Linear drop from `peakVelocity` to `peakVelocity / 2` |
+| 4 Engine off | `_fullSpeedEndTime → _halfSpeedEndTime` (80–100 %) | Linear drop to `peakVelocity / 2` |
 | 5 Free spin | `> _halfSpeedEndTime` until stop | Exponential friction decay; stops when velocity < 0.5 °/s |
 
 `_peakVelocity = SpinDurationSeconds × 180 °/s`
@@ -396,40 +397,46 @@ All time boundaries are in seconds from `_animStart`. `totalDuration = SpinDurat
 Friction decay per tick: `velocity *= (1 − frictionRate × dt)` where
 `frictionRate = 0.20 + (Friction − 1) × 0.28`.
 
-`_spinCancelled` flag: if `ResetWheel()` is called mid-spin it sets this flag and calls
-`_spinTcs.TrySetResult()`. The `SpinWheelAsync` continuation checks the flag and returns
-early without setting a winner.
+`_spinCancelled` flag: if `ResetWheel()` is called mid-spin it sets this flag. The
+`SpinWheelAsync` continuation returns early without setting a winner.
 
 #### Coordinate system and winner math
 
 Slices are drawn starting at **−90° (12 o'clock)** going **clockwise**. The pointer is
 fixed at the top. The canvas is rotated clockwise by `CurrentRotation` degrees.
 
-After the wheel stops at angle R, the pointer reads:
+After the wheel stops at angle R:
 ```
 pointerAngle = ((360 − R mod 360) mod 360 + 360) mod 360
-winnerIndex  = (int)(pointerAngle / sliceDeg) mod n
 ```
 
-Randomness comes from the variable wind-up fraction (2–5 % of total duration), which
-shifts the phase timing on every spin so the wheel never coasts from the same starting
-angle twice.
+Winner is found by walking cumulative slice arcs:
+```csharp
+// Weighted mode: arc proportional to weight
+// Unweighted mode: equal arcs (weight=1.0 each)
+double cumDeg = 0;
+for each activeSlice:
+    cumDeg += (w / totalWeight) * 360
+    if pointerAngle < cumDeg → this slice wins
+```
+
+`WinnerIndex` is the index in the full `Slices` collection (not the filtered active list),
+so the gold highlight in `SpinnerWheelControl` still works correctly.
+
+Active slice filter:
+- `UseWeightedSlices=ON`: `s.IsActive && s.Weight > 0`
+- `UseWeightedSlices=OFF`: `s.IsActive` only
 
 #### Palette colours
 
-When a new slice is added, its colour is chosen by:
-```csharp
-PaletteColors[Slices.Count % PaletteColors.Length]
-```
-There are 12 colours in the array, so the cycle repeats every 12 slices. To add or change
-colours, edit the `PaletteColors` array in this file.
+When a new slice is added: `PaletteColors[Slices.Count % PaletteColors.Length]`.
+12 colours in the array; cycle repeats every 12 slices.
 
 ---
 
 ### `Views/MainWindow.axaml` — Settings window
 
 **The streamer-facing control panel.** Has `x:DataType="vm:MainWindowViewModel"`.
-Does **not** contain a wheel — the wheel lives in `SpinnerWindow`.
 
 #### Layout structure
 
@@ -439,38 +446,39 @@ Window (760×640, title "SpinnerWheel — Settings")
     ├── [Col 0] ScrollViewer > StackPanel  — Controls
     │     SpinnerWheel header
     │     Grid: [SPIN! button | ↺ Reset button]
-    │     Grid: Duration (s) label | NumericUpDown (stretches to fill)
-    │           Inertia (1–10) label | NumericUpDown (stretches to fill)
-    │     Chroma Key: TextBox + live swatch Border
-    │     "Show Spinner Window" button  (Click → code-behind handler)
+    │     Grid: Speed (1–30) | Friction (1–10) — aligned two-column grid
+    │     Chroma Key: TextBox + colour swatch flyout (ColorView)
+    │     Weights section:
+    │       "Weights" header + "Use weighted slices" CheckBox
+    │       Default NumericUpDown + "Apply to All" + "Undo" buttons
     │     Save / Load Layout buttons
     └── [Col 1] Border  — Slice editor
           Grid (3 rows: Auto, *, Auto)
           ├── Toolbar: + − ▲ ▼ buttons
           ├── ListBox: slices (DataTemplate x:DataType=WheelSliceViewModel)
+          │     Each row: CheckBox(IsActive) + colour swatch + Label + "(inactive)" hint
           └── ScrollViewer: properties editor (IsVisible=HasSelectedSlice)
+                Label TextBox
+                Colour TextBox + swatch flyout
+                Weight NumericUpDown (0–100)
+                ── Separator ──
+                Image browse + remove
+                Sound browse + remove
 ```
 
-Note: the "Last Winner" display was removed from the Settings window. The winner banner
-is only shown on the `SpinnerWindow` (the OBS capture window).
+#### Slice list checkbox
+
+Each slice in the `ListBox` has a `CheckBox` bound to `IsActive` (two-way). Ticked =
+slice participates in the wheel. Unticked = excluded. A grey `(inactive)` hint text
+appears alongside any slice where `!IsActive`. The checkbox in the list is the single
+control for per-slice visibility — there is no separate "hidden" checkbox.
 
 #### Colour pickers
 
-Both the **Chroma Key** colour and each **Slice colour** have a clickable swatch button
-that opens a `Flyout` containing a full `ColorView` (spectrum wheel + sliders + hex
-input). `IsAlphaVisible="False"` hides the alpha channel since all colours are stored as
-opaque `#RRGGBB`. The `ColorView.Color` property is bound two-way via
-`{StaticResource ColorToHex}` so changes propagate directly to the ViewModel string
-property without any code-behind.
-
-#### Key bindings unique to this window
-
-`ChromaKeyColor` — bound to the hex TextBox (two-way) and to the swatch `Border.Background`
-via `HexColorToBrush`. The swatch updates live as the user types.
-
-`Click="OnShowSpinnerWindowClicked"` — this is a **code-behind event handler**, not a
-command binding. Showing/hiding a secondary window is a pure view concern; the ViewModel
-knows nothing about `SpinnerWindow`.
+Both the **Chroma Key** colour and each **Slice colour** have a swatch button that opens
+a `Flyout` containing a `ColorView` (`Avalonia.Controls.ColorPicker`).
+`IsAlphaVisible="False"` hides the alpha channel. `ColorView.Color` is bound two-way
+via `{StaticResource ColorToHex}`.
 
 ---
 
@@ -482,207 +490,141 @@ Constructs all services and the shared ViewModel, then creates and shows `Spinne
 public MainWindow()
 {
     InitializeComponent();
-    var pickerService = new WindowFilePickerService(this);   // needs 'this' for StorageProvider
+    var pickerService = new WindowFilePickerService(this);
     var layoutService = new LayoutService();
     var audioService  = new AudioService();
     var vm = new MainWindowViewModel(pickerService, layoutService, audioService);
     DataContext = vm;
 
-    _spinnerWindow = new SpinnerWindow(vm);   // share the same ViewModel instance
+    _spinnerWindow = new SpinnerWindow(vm);
     _spinnerWindow.Show();
 
-    // Bidirectional close: closing either window closes both.
     Closing               += (_, _) => _spinnerWindow.Close();
-    _spinnerWindow.Closed += (_, _) => Close();   // Closed (past) avoids re-entrancy
+    _spinnerWindow.Closed += (_, _) => Close();
 
-    // Position side by side on primary display once the window is live.
+    // Mutual z-raise: clicking either window brings both to front.
+    Activated                += (_, _) => BringToFrontNoActivate(_spinnerWindow);
+    _spinnerWindow.Activated += (_, _) => BringToFrontNoActivate(this);
+
     Opened += (_, _) => PositionWindowsSideBySide();
 }
 ```
 
-`PositionWindowsSideBySide()` — called from `Opened`. Reads `Screens.Primary.WorkingArea`
-(physical pixels), converts logical window sizes via `screen.Scaling`, then sets both
-windows' `Position` so the pair is horizontally and vertically centred on screen.
-
-**Mutual activation** — both windows' `Activated` events are wired so clicking either
-window brings both to the front. A `_activatingPair` bool guard prevents the two
-handlers calling each other in an infinite loop.
-
-`OnShowSpinnerWindowClicked` — event handler for the "Show Spinner Window" button.
-Calls `Activate()` if the window is already visible (bring to front), or `Show()` if
-it has been minimised.
+**`BringToFrontNoActivate(Window)`** — uses Win32 P/Invoke `SetWindowPos` with
+`SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE` to raise the other window to the top of the
+Z-order **without stealing focus**. This is critical: the old `Activate()` approach stole
+focus mid-click (between `PointerPressed` and `PointerReleased`), causing controls to
+require multiple clicks. `SWP_NOACTIVATE` avoids the focus transfer entirely.
+No guard flag is needed because `SetWindowPos(SWP_NOACTIVATE)` does not trigger the
+`Activated` event, so there is no ping-pong risk.
 
 ---
 
 ### `Views/SpinnerWindow.axaml` — OBS capture window
 
 **The wheel-only display window.** Has `x:DataType="vm:MainWindowViewModel"`.
-The entire `Window.Background` is the chromakey colour — no static value, always live:
-
-```xml
-Background="{Binding ChromaKeyColor, Converter={StaticResource HexColorToBrush}}"
-```
-
-#### Layout structure
+`Window.Background` is live-bound to `ChromaKeyColor`.
 
 ```
 Window (620×660, title "SpinnerWheel — OBS Capture", resizable)
 Background = ChromaKeyColor (live)
-└── Grid (no row/column definitions — children overlap)
-    ├── Viewbox (Stretch=Uniform, fills window)
-    │   └── SpinnerWheelControl (600×600 logical px)
+└── Grid (children overlap / Z-stacked)
+    ├── Viewbox (Stretch=Uniform)
+    │   └── SpinnerWheelControl (600×600)
+    │         Slices, RotationAngle, WinnerIndex, UseWeightedSlices bound from VM
     └── Border (VerticalAlignment=Bottom, IsVisible when WinnerMessage non-empty)
             Background = #CC000000 (dark semi-transparent pill)
             └── TextBlock: WinnerMessage (30px bold white)
 ```
 
-**Why the winner banner is semi-transparent black, not chromakey coloured:**
-If the banner background matched the chromakey colour, OBS would key it out and the
-winner text would float without a legible background. The dark pill (`#CC000000`) is
-intentionally opaque so it remains readable after keying.
-
-**Why no `ColumnDefinitions`/`RowDefinitions` on the root Grid:**
-Omitting them makes all children fill the same space (Z-stacked). The winner banner
-overlays the wheel without pushing it upwards.
-
-**Corners of the wheel:**
-`SpinnerWheelControl` does not paint anything outside the circular wheel. The window
-background (chromakey colour) shows through in those areas. OBS keys out the solid
-colour, resulting in a clean circular wheel shape over the game scene.
+The winner banner background is `#CC000000` (not the chromakey colour) so OBS does not
+key it out — the text must remain readable after keying.
 
 ---
 
 ### `Views/SpinnerWindow.axaml.cs` — OBS capture window code-behind
 
-Two constructors (chained):
-
-```csharp
-// Parameterless — required by Avalonia XAML loader and IDE design tools.
-public SpinnerWindow()
-{
-    InitializeComponent();
-}
-
-// Runtime constructor — shares the ViewModel.
-public SpinnerWindow(MainWindowViewModel vm) : this()
-{
-    DataContext = vm;
-}
-```
-
-There is no longer a hide-instead-of-close guard or `CloseForReal()`. Closing the
-`SpinnerWindow` is handled symmetrically from `MainWindow` — both windows close together.
-
-**Why two constructors?** Avalonia's build system warns (`AVLN3001`) if a Window has no
-public parameterless constructor, because the XAML loader cannot instantiate it for
-design-time preview. Chaining to the parameterless constructor keeps all initialisation
-in one place while satisfying the loader.
+Two constructors (chained). Parameterless required by Avalonia XAML loader; runtime
+constructor accepts `MainWindowViewModel` and sets `DataContext`.
 
 ---
 
 ### `Controls/SpinnerWheelControl.cs`
 
-**Custom Avalonia `Control` subclass that owns all wheel rendering.**
-
-It has **no AXAML template** — it renders entirely by overriding `Render(DrawingContext)`.
-This gives complete control over pixel-level drawing at the cost of not being able to
-use standard Avalonia control composition inside it.
+**Custom Avalonia `Control` subclass.** Renders entirely by overriding
+`Render(DrawingContext)` — no AXAML template.
 
 #### Styled properties
 
 | Property | Type | Default | Purpose |
 |----------|------|---------|---------|
-| `Slices` | `ObservableCollection<WheelSliceViewModel>?` | null | The slice data to render |
-| `RotationAngle` | `double` | 0.0 | Current clockwise rotation in degrees |
-| `WinnerIndex` | `int` | -1 | Which slice to highlight in gold; -1 = none |
+| `Slices` | `ObservableCollection<WheelSliceViewModel>?` | null | Slice data to render |
+| `RotationAngle` | `double` | 0.0 | Clockwise rotation in degrees |
+| `WinnerIndex` | `int` | -1 | Which slice to highlight gold; -1 = none |
+| `UseWeightedSlices` | `bool` | true | When true: proportional arcs; when false: equal arcs |
 
-`RotationAngleProperty` and `WinnerIndexProperty` are registered with `AffectsRender<>`,
-meaning changing them automatically schedules a redraw via `InvalidateVisual()`.
+`RotationAngleProperty`, `WinnerIndexProperty`, and `UseWeightedSlicesProperty` are all
+registered with `AffectsRender<>` — changing them automatically triggers a redraw.
 
-`SlicesProperty` is **not** registered with `AffectsRender` because the reference itself
-rarely changes — instead `OnPropertyChanged` manually subscribes to:
-- `ObservableCollection.CollectionChanged` (slice added/removed/moved)
-- Each `WheelSliceViewModel.PropertyChanged` (label edited, colour changed, image assigned)
+`SlicesProperty` uses manual `CollectionChanged` + per-item `PropertyChanged` subscriptions
+(all calling `InvalidateVisual()`) because the collection reference rarely changes.
 
-All of these call `InvalidateVisual()`, which queues a redraw on the next render frame.
-Subscriptions are carefully cleaned up in `OnPropertyChanged` to avoid memory leaks.
+#### Active slice filter in DrawSlices
+
+```csharp
+// Only active slices are drawn. Zero-weight slices are also excluded in weighted mode
+// (a 0-arc slice cannot meaningfully appear).
+if (s.IsActive && (!useWeightedSlices || s.Weight > 0)) active.Add(s);
+```
+
+When `active` is empty, `DrawEmptyWheel` is shown.
+
+#### Weighted arc calculation
+
+```csharp
+double totalWeight = useWeightedSlices ? active.Sum(s => s.Weight) : active.Count;
+double w           = useWeightedSlices ? slice.Weight : 1.0;
+var sliceRad       = (w / totalWeight) * 2 * Math.PI;
+```
+
+`startAngle` is accumulated across the loop (not recalculated from index × sliceRad),
+which is required for weighted slices where arcs have different sizes.
+
+#### Winner highlight
+
+`WinnerIndex` is an index into the **full** `Slices` collection. The control finds the
+active slice's position using `slices.IndexOf(slice) == WinnerIndex` so the gold border
+correctly follows the slice even after filtering.
 
 #### Rendering pipeline
 
-`Render(DrawingContext ctx)` is called by Avalonia whenever the control needs repainting:
-
-1. Reads `Bounds` to determine actual pixel dimensions.
-2. Calculates `center` (midpoint) and `radius` (half the smallest dimension minus 18px padding).
-3. Builds a **rotation matrix** that rotates the canvas around the centre point:
-   ```csharp
-   Matrix.CreateTranslation(-cx, -cy) *
-   Matrix.CreateRotation(rad) *
-   Matrix.CreateTranslation(cx, cy)
-   ```
-   This is the standard "rotate around a point" transform using Avalonia's row-vector
-   matrix convention (A × B applies A first, then B).
-4. Inside `ctx.PushTransform(rotMatrix)` — draws all slices (rotates with the wheel).
-5. Outside the transform — draws the outer ring, pointer indicator, and centre pin
-   (these are **fixed** in screen space and do not rotate).
-
-#### DrawSlices
-
-Loops through all `WheelSliceViewModel` items. For each slice:
-- Calculates `startAngle` from `-Math.PI/2 + i * sliceRad` (starts at top, goes clockwise).
-- Calls `DrawPieSlice` to fill the triangular sector.
-- If `i == WinnerIndex`: uses a 4px gold `Pen` border instead of the 2px white one,
-  and lightens the fill colour by 20% using the `Lighten` helper.
-- Calls `DrawSliceImage` if a `LoadedBitmap` is present.
-- Calls `DrawSliceLabel` if `Label` is non-empty.
+`Render()`:
+1. Calculates `center` and `radius` from `Bounds`.
+2. Builds rotation matrix: `Translate(-cx,-cy) × Rotate(rad) × Translate(cx,cy)`.
+3. Inside `PushTransform`: draws slices (rotate with wheel).
+4. Outside transform: draws outer ring, pointer, centre pin (fixed in screen space).
 
 #### DrawPieSlice
 
-Handles the special case of a single slice (draws a full circle) and the general case
-(draws a pie sector using `StreamGeometry` with `ArcTo`).
+Handles single-slice (full circle) and general case (pie sector via `StreamGeometry`
+with `ArcTo`, `isLargeArc = true` when arc > 180°).
 
-`StreamGeometry` is built imperatively:
-```
-BeginFigure(center) → LineTo(arcStart) → ArcTo(arcEnd, radius, isLargeArc=true if > 180°) → EndFigure
-```
+#### DrawSliceImage / DrawSliceLabel
 
-#### DrawSliceImage
-
-Places the image at **55% of the radius** from the centre along the midAngle direction.
-Image size is capped at `min(radius × 0.28, 52px)`. There is **no clipping** — images
-small enough relative to the wheel will not overflow into neighbouring slices. If clipping
-is needed in the future, use `ctx.PushClip(geometry)` around the `DrawImage` call.
-
-#### DrawSliceLabel
-
-Places text at **70% of the radius** from the centre. Font size scales with slice count:
-- ≤ 4 slices: 14px
-- 5–8 slices: 12px
-- > 8 slices: 10px
-
-Labels longer than 16 characters are truncated with `…`. Text is centred on the midAngle
-point using `FormattedText.Width` and `.Height`.
+- Image at 55% radius, size capped at `min(radius × 0.28, 52px)`.
+- Label at 70% radius. Font: 14px (≤4 slices), 12px (5–8), 10px (>8). Truncated at 16 chars.
 
 #### Fixed decorations
 
-- **`DrawOuterRing`** — a `#444444` circle with 3px stroke drawn over the rotating slices
-  to clean up any anti-aliasing jaggies at the edge.
-- **`DrawPointer`** — a red (`#E74C3C`) downward-pointing triangle. Its tip touches the
-  wheel rim at the 12 o'clock position. Base half-width = 11px, height = 20px.
-- **`DrawCenterPin`** — a white disc (r=14) with a red dot (r=7) at the exact centre,
-  covering the point where all slice borders converge.
-
-#### Empty state
-
-When `Slices` is null or empty, `DrawEmptyWheel` renders a dark grey circle with the text
-"Add slices to get started" centred inside it. The pointer is still drawn so the user
-can see where the indicator is.
+- `DrawOuterRing` — `#444444` circle, 3px, drawn over slices to clean up jagged edges.
+- `DrawPointer` — red (`#E74C3C`) downward triangle at 12 o'clock, tip on the rim.
+- `DrawCenterPin` — white disc (r=14) + red dot (r=7) at centre.
 
 ---
 
 ### `Services/IFilePickerService.cs`
 
-**Dependency inversion interface** that isolates the ViewModel from any Avalonia UI
-types. The ViewModel calls these methods and receives a `string?` path back.
+Dependency-inversion interface. Returns `string?` paths; null on cancel.
 
 ```csharp
 Task<string?> OpenImageFileAsync();
@@ -691,100 +633,62 @@ Task<string?> OpenLayoutFileAsync();
 Task<string?> SaveLayoutFileAsync(string defaultName);
 ```
 
-All methods return `null` if the user cancels the dialog or if the platform cannot
-provide a `StorageProvider`.
-
 ---
 
 ### `Services/WindowFilePickerService.cs`
 
-**Concrete implementation of `IFilePickerService`** using Avalonia's cross-platform
-`IStorageProvider` API (introduced in Avalonia 11 to replace the older `OpenFileDialog`).
-
-Key points:
-- Resolves the `IStorageProvider` lazily via `TopLevel.GetTopLevel(_window)?.StorageProvider`.
-  `TopLevel` is the Avalonia class that represents the top-level native window. On
-  all platforms it provides the `StorageProvider` for native OS file dialogs.
-- `TryGetLocalPath()` converts the `IStorageFile` URI to a local filesystem path.
-  Use this rather than `.Path.LocalPath` because `TryGetLocalPath()` handles
-  sandboxed environments (e.g. macOS App Sandbox) where URI access may differ.
-- Three static `FilePickerFileType` filter objects are shared across calls (image,
-  audio, layout) to avoid allocation per dialog open.
+Concrete implementation using Avalonia's `IStorageProvider` API. Uses
+`TopLevel.GetTopLevel(_window)?.StorageProvider`. Returns paths via `TryGetLocalPath()`.
 
 ---
 
 ### `Services/LayoutService.cs`
 
-**JSON save/load for `WheelLayout`.** Uses `System.Text.Json` (built into .NET, no
-extra package needed).
-
-Options:
-```csharp
-new JsonSerializerOptions
-{
-    WriteIndented = true,
-    PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-}
-```
-
-`camelCase` means `WheelSlice.ImagePath` serialises as `"imagePath"` in JSON.
-Do not change the naming policy without also updating any existing saved layout files.
-
-Both `SaveAsync` and `LoadAsync` are `async` — they use `File.WriteAllTextAsync` /
-`File.ReadAllTextAsync` so the UI thread is not blocked during disk I/O.
-`LoadAsync` returns `null` (rather than throwing) on parse failure and logs to
-`Debug.WriteLine`.
+JSON save/load for `WheelLayout` using `System.Text.Json` with `camelCase` naming policy.
+Both methods are `async` (non-blocking disk I/O). `LoadAsync` returns `null` on failure.
 
 ---
 
 ### `Services/AudioService.cs`
 
-**Cross-platform, fire-and-forget audio playback** by spawning a system audio process.
-Implements `IDisposable` — call `Dispose()` to kill any in-progress audio.
+**Audio playback service.** Implements `IDisposable`.
 
-| Platform | WAV | MP3 |
-|----------|-----|-----|
-| Windows | PowerShell `Media.SoundPlayer.PlaySync()` | `cmd /c start /b` (opens default player) |
-| macOS | `afplay` | `afplay` (handles both) |
-| Linux | `aplay` | `mpg123` (must be installed) |
+| Platform | Implementation | Notes |
+|----------|---------------|-------|
+| Windows (WAV + MP3) | NAudio `WaveOutEvent` + `AudioFileReader` | In-process, no window, can be stopped |
+| macOS | `afplay` process | Handles both WAV and MP3 natively |
+| Linux (WAV) | `aplay` process | Standard ALSA tool |
+| Linux (MP3) | `mpg123` process | Must be installed separately |
 
-`StopCurrent()` kills the previous process (with `entireProcessTree: true`) before
-starting a new one — so overlapping sounds do not stack up.
+**Windows implementation detail:**
+`AudioFileReader` detects format from file extension and uses Windows' built-in
+ACM/Media Foundation codecs — the same codecs used by Windows Media Player, but entirely
+in-process. `WaveOutEvent.PlaybackStopped` event auto-disposes the reader when playback
+ends naturally. `StopCurrent()` calls `_waveOut.Stop()` + `Dispose()` before starting a
+new sound, preventing overlapping playback.
 
-`StartProcess` is a private helper that creates a `ProcessStartInfo` with
-`UseShellExecute=false`, `CreateNoWindow=true`, and redirected stdout/stderr so no
-console window appears.
-
-**Limitation:** Windows MP3 playback uses `start /b` which opens whatever the user has
-set as their default media player. For seamless in-process MP3 on all platforms,
-consider replacing this class with a `LibVLCSharp`-based implementation.
+The old Windows MP3 approach (`cmd /c start /b`) launched the system's default media
+player as a visible external process and could not be stopped cleanly. NAudio replaces
+both WAV and MP3 paths on Windows.
 
 ---
 
 ### `Converters/HexColorToBrushConverter.cs`
 
-**One-way `IValueConverter`** that parses a CSS hex string and returns a
-`SolidColorBrush`. Used in the ListBox item template to colour the small swatch square
-next to each slice name.
-
-- Registered in `App.axaml` under key `"HexColorToBrush"`.
-- `Convert`: calls `Color.Parse(hex)` inside a try/catch; returns a gray brush on failure.
-- `ConvertBack`: throws `NotSupportedException` (one-way only).
+**One-way** `IValueConverter`. Parses CSS hex → `SolidColorBrush`. Fallback: grey.
+Registered in `App.axaml` as `"HexColorToBrush"`.
 
 ---
 
 ### `Converters/ColorToHexConverter.cs`
 
-**Two-way `IValueConverter`** between a CSS hex string (`string`) and
-`Avalonia.Media.Color`. Used to bind `ColorView.Color` to the ViewModel's string
-properties (`ChromaKeyColor`, `SelectedSlice.ColorHex`).
+**Two-way** `IValueConverter` between CSS hex `string` and `Avalonia.Media.Color`.
+Used to bind `ColorView.Color` (in colour picker flyouts) to ViewModel string properties.
 
-- Registered in `App.axaml` under key `"ColorToHex"`.
-- `Convert` (string → Color): parses hex, forces alpha to 255 so the `ColorView` never
-  shows a partial-transparency state.
-- `ConvertBack` (Color → string): formats as `#RRGGBB`, discarding alpha so stored
-  values are always opaque RGB hex.
-- Fallback in both directions is `#00B140` (broadcast-safe green).
+- `Convert` (string → Color): parses hex, forces alpha=255.
+- `ConvertBack` (Color → string): formats as `#RRGGBB`, discarding alpha.
+- Fallback in both directions: `#00B140`.
+- Registered in `App.axaml` as `"ColorToHex"`.
 
 ---
 
@@ -803,62 +707,53 @@ properties (`ChromaKeyColor`, `SelectedSlice.ColorHex`).
 
 1. Write a private method (sync `void` or `async Task`).
 2. Decorate it with `[RelayCommand]` (optionally add `CanExecute = nameof(SomeMethod)`).
-3. The generated command name is the method name with `Async` stripped and `Command` appended.
-4. Bind it in AXAML: `Command="{Binding MyNewCommand}"`.
-5. If the command's enabled state depends on `SelectedSlice`, add
+3. Generated command name: method name with `Async` stripped, `Command` appended.
+4. Bind in AXAML: `Command="{Binding MyNewCommand}"`.
+5. If enabled state depends on `SelectedSlice`, add
    `[NotifyCanExecuteChangedFor(nameof(MyNewCommand))]` to the `_selectedSlice` field.
 
 ### Change the spin animation feel
 
-The spin is physics-based. Key tuning points in `MainWindowViewModel.cs`:
+Key tuning points in `MainWindowViewModel.cs`:
 
-- **Wind-up speed** — `_windUpSpeed = 60.0` °/s. Increase for a more dramatic pull-back.
-- **Phase boundaries** — `_accelEndTime = 0.10`, `_fullSpeedEndTime = 0.80`, expressed as
-  fractions of `totalDuration`. Shift these to change when the wheel hits full speed or
-  starts braking.
-- **Acceleration curve** — Phase 2 uses `Lerp(−windUpSpeed, peakVelocity, t²)`. Change
-  `t²` to `t³` for a slower build-up, or `t` for a linear ramp.
-- **Friction formula** — `frictionRate = 0.20 + (Friction − 1) × 0.28`. Adjust the
-  multiplier to change how dramatically higher friction values differ from lower ones.
-- **Stop threshold** — `_currentVelocity < 0.5 °/s`. Lower for a more precise stop;
-  raise if the wheel visibly creeps at the end.
+- **Wind-up speed** — `_windUpSpeed = 60.0` °/s.
+- **Phase boundaries** — `_accelEndTime = 0.10`, `_fullSpeedEndTime = 0.80` (fractions of total).
+- **Acceleration curve** — Phase 2 uses `Lerp(−windUpSpeed, peakVelocity, t²)`. Change `t²` to
+  `t³` for a slower build-up.
+- **Friction formula** — `frictionRate = 0.20 + (Friction − 1) × 0.28`.
+- **Stop threshold** — `_currentVelocity < 0.5 °/s`.
 
 ### Change how slices are drawn
 
-All drawing code is in `Controls/SpinnerWheelControl.cs`. The methods are all `static`
-and receive `DrawingContext ctx` as their first argument. Key entry points:
-- `DrawSlices` — the outer loop, where you can change per-slice behaviour
-- `DrawPieSlice` — the geometry of each sector
+All drawing code is in `Controls/SpinnerWheelControl.cs`. Key entry points:
+- `DrawSlices` — outer loop; weighted/unweighted arc calculation
+- `DrawPieSlice` — geometry of each sector
 - `DrawSliceLabel` — text positioning and font
 - `DrawSliceImage` — image positioning and size
 - `DrawPointer` — the fixed triangle indicator
 
 ### Add a global UI style
 
-Add `<Style Selector="...">` elements inside `<Application.Styles>` in `App.axaml`,
-after `<FluentTheme />`. This applies the style to every instance of the matched control
-across the whole app.
+Add `<Style Selector="...">` inside `<Application.Styles>` in `App.axaml`, after `<FluentTheme />`.
 
 ### Change the default palette
 
-Edit `PaletteColors` in `MainWindowViewModel.cs`. It is a `static readonly string[]` of
-CSS hex strings. The array length can be anything; the code uses `% PaletteColors.Length`
-so it always wraps correctly.
+Edit `PaletteColors` in `MainWindowViewModel.cs` — `static readonly string[]` of CSS hex strings.
 
 ---
 
 ## What NOT to do
 
-- **Do not use `WrapPanel` with a spacing property** — Avalonia's `WrapPanel` has no
-  `Spacing`, `ItemSpacing`, or `LineSpacing`. Use a `StackPanel` instead when you need
-  horizontal items with gaps.
-- **Do not add `x:CompileBindings="False"`** to bypass compiled bindings without a good
-  reason — the whole project is configured for compiled bindings and the type-safety
-  catches errors early.
+- **Do not use `WrapPanel` with a spacing property** — Avalonia's `WrapPanel` has no `Spacing`.
+  Use `StackPanel Orientation="Horizontal"` with `Spacing` instead.
+- **Do not add `x:CompileBindings="False"`** without good reason — compiled bindings are
+  project-wide and the type-safety catches errors early.
 - **Do not reference `_fieldName` directly in the ViewModel body** when an `[ObservableProperty]`
-  field has that name — CommunityToolkit emits warning MVVMTK0034. Always use the
-  generated PascalCase property (`SelectedSlice`, not `_selectedSlice`).
+  field has that name — use the generated PascalCase property (MVVMTK0034 warning).
 - **Do not add ReactiveUI** — the project deliberately uses CommunityToolkit.Mvvm only.
 - **Do not embed binary assets in the JSON layout** — `WheelLayout` stores file paths only.
-- **Do not call `InvalidateVisual()` from a background thread** — always ensure calls
-  originate on the UI thread (the `DispatcherTimer` guarantees this for animation).
+- **Do not call `InvalidateVisual()` from a background thread** — always call from UI thread.
+- **Do not use `Activate()` for mutual window raising** — use `SetWindowPos(SWP_NOACTIVATE)`
+  via P/Invoke. `Activate()` steals focus mid-click and causes controls to need multiple clicks.
+- **Do not auto-deactivate slices from `OnWeightChanged`** — weight changes are intentionally
+  inert. Only post-spin logic (guarded by `UseWeightedSlices`) should change `IsActive`.
