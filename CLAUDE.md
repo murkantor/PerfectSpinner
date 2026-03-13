@@ -69,28 +69,30 @@ Without this line `ColorView` renders as a grey rectangle (no error is thrown).
 
 ## Two-window architecture (OBS streaming design)
 
-The app runs as **two separate windows** that share one `MainWindowViewModel`:
+The app runs as **two separate windows** sharing one `MainWindowViewModel`:
 
 ```
-┌──────────────────────────────┐     ┌──────────────────────────────────┐
-│  MainWindow  (Settings)      │     │  SpinnerWindow  (OBS Capture)    │
-│  Title: "SpinnerWheel —      │     │  Title: "SpinnerWheel —          │
-│          Settings"           │     │          OBS Capture"            │
-│  Contains:                   │     │  Contains:                       │
-│  • SPIN + ↺ Reset buttons    │     │  • SpinnerWheelControl (full)    │
-│  • Speed + Friction controls │     │  • Winner banner overlay         │
-│  • Chroma key colour picker  │     │  • Background = ChromaKeyColor   │
-│  • Weights section           │     │                                  │
-│  • Save / Load layout        │     │  In OBS: Window Capture source   │
-│  • Full slice editor         │     │  + Chroma Key filter             │
-└──────────────┬───────────────┘     └──────────────────────────────────┘
+┌──────────────────────────────────┐     ┌──────────────────────────────────┐
+│  MainWindow  (Settings)          │     │  SpinnerWindow  (OBS Capture)    │
+│  Title: "SpinnerWheel —          │     │  Title: "SpinnerWheel —          │
+│          Settings"               │     │          OBS Capture"            │
+│  Header: "SpinnerWheel" text     │     │  Contains:                       │
+│  TabControl (Wheel 1 | Wheel 2): │     │  • ONE SpinnerWheelControl       │
+│    Each tab = WheelEditorPanel   │     │  • Driven by ActiveWheel         │
+│    (left: controls + expanders;  │     │  • Winner banner overlay         │
+│     right: slice editor)         │     │  • Background = ActiveWheel      │
+│  Switching tabs changes          │     │    .ChromaKeyColor               │
+│  ActiveWheel → SpinnerWindow     │     │                                  │
+│  updates instantly               │     │  In OBS: Window Capture source   │
+│                                  │     │  + Chroma Key filter             │
+└──────────────┬───────────────────┘     └──────────────────────────────────┘
                │ creates + owns                   ▲
                │ DataContext = vm                 │ DataContext = same vm
                └──────────────────────────────────┘
 ```
 
 **Why this works for streaming:**
-- `SpinnerWindow.Background` is bound to `ChromaKeyColor` (default `#00FF00` broadcast green).
+- `SpinnerWindow.Background` is bound to `ActiveWheel.ChromaKeyColor` (default `#00FF00`).
 - `SpinnerWheelControl` draws only the circle and its contents — no background fill — so
   the corners and the area outside the wheel show through to the solid chromakey colour.
 - OBS Window Capture on `SpinnerWindow` + a Chroma Key filter removes the solid colour,
@@ -114,30 +116,37 @@ The app runs as **two separate windows** that share one `MainWindowViewModel`:
 ## Architecture diagram
 
 ```
-┌─────────────────────────────────────────────┐
-│  Views / AXAML  (pure UI, no logic)         │
-│  MainWindow  – Settings UI                  │
-│  SpinnerWindow – OBS capture UI             │
-│    Both: DataContext = MainWindowViewModel  │
-└────────┬────────────────────────────────────┘
+┌─────────────────────────────────────────────────────┐
+│  Views / AXAML  (pure UI, no logic)                 │
+│  MainWindow        – header + TabControl            │
+│  WheelEditorPanel  – UserControl (reused per tab)   │
+│  SpinnerWindow     – OBS capture UI                 │
+│    MainWindow + SpinnerWindow: DataContext = MainWindowViewModel
+│    WheelEditorPanel: DataContext = WheelViewModel   │
+│      (set by TabControl ContentTemplate)            │
+└────────┬────────────────────────────────────────────┘
          │ binds to
-┌────────▼────────────────────────────────────┐
-│  ViewModels  (all application logic)        │
-│  MainWindowViewModel                        │
-│    owns → ObservableCollection<WheelSliceViewModel>
-│  WheelSliceViewModel                        │
-│    wraps → WheelSlice (Model)               │
-└────────┬────────────────────────────────────┘
+┌────────▼────────────────────────────────────────────┐
+│  ViewModels  (all application logic)                │
+│  MainWindowViewModel  (thin container)              │
+│    owns → Wheel1, Wheel2 : WheelViewModel           │
+│    owns → Wheels : IReadOnlyList<WheelViewModel>    │
+│    ActiveWheelIndex → ActiveWheel (computed)        │
+│  WheelViewModel  (all per-wheel state + commands)   │
+│    owns → ObservableCollection<WheelSliceViewModel> │
+│  WheelSliceViewModel                                │
+│    wraps → WheelSlice (Model)                       │
+└────────┬────────────────────────────────────────────┘
          │ depends on (constructor injection)
-┌────────▼────────────────────────────────────┐
-│  Services                                   │
-│  IFilePickerService / WindowFilePickerService│
-│  LayoutService                              │
-│  AudioService  (NAudio on Windows)          │
-└─────────────────────────────────────────────┘
+┌────────▼────────────────────────────────────────────┐
+│  Services                                           │
+│  IFilePickerService / WindowFilePickerService       │
+│  LayoutService  (JSON + ZIP save/load)              │
+│  AudioService  (NAudio on Windows)                  │
+└─────────────────────────────────────────────────────┘
 
 Controls/SpinnerWheelControl  ← custom Avalonia Control
-  receives Slices + RotationAngle + WinnerIndex + UseWeightedSlices via StyledProperties
+  all styled properties bound from MainWindowViewModel.ActiveWheel.*
   calls InvalidateVisual() → Render(DrawingContext) every ~16 ms during spin
 
 Models/WheelSlice + WheelLayout  ← plain C#, JSON-serialisable
@@ -226,6 +235,7 @@ kept for future navigation.
 | `Label` | `string` | `"Slice"` | Text displayed inside the slice |
 | `ImagePath` | `string?` | null | Absolute path to PNG/JPG, or null |
 | `SoundPath` | `string?` | null | Absolute path to WAV/MP3, or null |
+| `WinnerLabel` | `string?` | null | If non-empty, overrides `WinnerMessageTemplate` for this slice |
 | `ColorHex` | `string` | `"#E74C3C"` | CSS hex colour, e.g. `"#E74C3C"` |
 | `Weight` | `double` | `1.0` | Relative weight for proportional spinning |
 | `IsActive` | `bool` | `true` | Whether the slice participates in the wheel |
@@ -244,6 +254,22 @@ Asset paths are stored as absolute paths — they break if the user moves files.
 | `Name` | `string` | `"My Wheel"` | Display name |
 | `Slices` | `List<WheelSlice>` | empty | Ordered list of all slices |
 | `SpinDurationSeconds` | `double` | `4.0` | Spin animation length (maps to "Speed" in UI) |
+| `Friction` | `int` | `5` | Free-spin friction 1–10 |
+| `SliceImageMode` | `int` | `0` | 0 = Static, 1 = Rotating, 2 = Upright |
+| `ShowLabels` | `bool` | `true` | Global label visibility |
+| `LabelFontIndex` | `int` | `0` | Index into available font list (0 = default) |
+| `LabelFontSize` | `double` | `0` | 0 = auto-scale by slice count |
+| `LabelColorStyle` | `int` | `0` | 0 = white/black border, 1 = black/white border |
+| `LabelBold` | `bool` | `false` | Bold label weight |
+| `ChromaKeyColor` | `string` | `"#00FF00"` | OBS chroma key background colour |
+| `UseWeightedSlices` | `bool` | `false` | Proportional slice sizing |
+| `GlobalWeight` | `double` | `3.0` | Default for "Apply to All" |
+| `LogSpins` | `bool` | `true` | Append spin results to `./logs/spins.log` |
+| `WinnerMessageTemplate` | `string` | `"🎉  %t%!"` | Banner text template; `%t%` = slice label |
+| `DefaultSoundPath` | `string?` | null | Fallback sound if slice has no `SoundPath` |
+| `BrightenWinner` | `bool` | `false` | White overlay on winning slice after spin |
+| `DarkenLosers` | `bool` | `false` | Dark overlay on all losing slices after spin |
+| `InvertLoserText` | `bool` | `false` | Losing slice labels: text colour = border colour |
 
 ---
 
@@ -267,13 +293,14 @@ source generation.
 | `_colorHex` | `ColorHex` | `string` | CSS hex, e.g. `"#3498DB"` |
 | `_imagePath` | `ImagePath` | `string?` | Setting this triggers `OnImagePathChanged` |
 | `_soundPath` | `SoundPath` | `string?` | Path to audio file |
+| `_winnerLabel` | `WinnerLabel` | `string?` | If non-empty, overrides wheel template for this slice |
 | `_loadedBitmap` | `LoadedBitmap` | `Bitmap?` | Set internally by `OnImagePathChanged` |
 | `_weight` | `Weight` | `double` | Relative weight; used when `UseWeightedSlices` is on |
 | `_isActive` | `IsActive` | `bool` | User-toggled; tick = on wheel, untick = excluded |
 
 **`IsActive` behaviour:**
 - Purely user-controlled via the checkbox in the slice list (tick = active).
-- Auto-set to `false` by `MainWindowViewModel` post-spin when `UseWeightedSlices` is ON
+- Auto-set to `false` by `WheelViewModel` post-spin when `UseWeightedSlices` is ON
   and the winner's weight deducts to 0.
 - Weight editing alone does **not** auto-change `IsActive` — that is intentional so that
   turning off `UseWeightedSlices` makes weights completely inert.
@@ -292,12 +319,31 @@ from disk into `LoadedBitmap`. Logs on failure; does not throw.
 
 ### `ViewModels/MainWindowViewModel.cs`
 
-**The heart of the application.** A `partial class` inheriting `ViewModelBase`.
+**Thin container.** Owns two `WheelViewModel` instances and tracks which is active.
+
+| Property | Type | Purpose |
+|----------|------|---------|
+| `Wheel1` | `WheelViewModel` | First wheel (Tab 1) |
+| `Wheel2` | `WheelViewModel` | Second wheel (Tab 2) |
+| `Wheels` | `IReadOnlyList<WheelViewModel>` | `[Wheel1, Wheel2]` — bound to `TabControl.ItemsSource` |
+| `ActiveWheelIndex` | `int` | 0 or 1 — two-way bound to `TabControl.SelectedIndex` |
+| `ActiveWheel` | `WheelViewModel` (computed) | `ActiveWheelIndex == 0 ? Wheel1 : Wheel2` — what SpinnerWindow shows |
+
+`ActiveWheel` carries `[NotifyPropertyChangedFor]` so the SpinnerWindow's bindings
+(`ActiveWheel.Slices`, `ActiveWheel.CurrentRotation`, etc.) update when the tab changes.
+
+---
+
+### `ViewModels/WheelViewModel.cs`
+
+**The heart of the application.** All per-wheel state, commands, and animation logic.
+A `partial class` inheriting `ViewModelBase`. Two instances are created by `MainWindowViewModel`.
 
 #### Observable state
 
 | Property | Type | Purpose |
 |----------|------|---------|
+| `Name` | `string` | Tab header label ("Wheel 1" / "Wheel 2") — plain property, not observable |
 | `Slices` | `ObservableCollection<WheelSliceViewModel>` | Ordered list of slices on the wheel |
 | `SelectedSlice` | `WheelSliceViewModel?` | Currently selected slice in the editor |
 | `CurrentRotation` | `double` | Wheel rotation in degrees; drives `SpinnerWheelControl` |
@@ -308,6 +354,24 @@ from disk into `LoadedBitmap`. Logs on failure; does not throw.
 | `ChromaKeyColor` | `string` | CSS hex for SpinnerWindow background (OBS chroma key). Default `#00FF00` |
 | `GlobalWeight` | `double` | Default weight value for "Apply to All" |
 | `UseWeightedSlices` | `bool` | When true: proportional slice sizing + post-spin deduction. Default `false` |
+| `SliceImageMode` | `int` | 0 = Static, 1 = Rotating, 2 = Upright |
+| `ShowLabels` | `bool` | Global label visibility toggle |
+| `LabelFontIndex` | `int` | Index into `AvailableFontNames`. 0 = default (Inter) |
+| `LabelFontFamily` | `string` (computed) | Resolved font family string from `_fontFamilyValues[LabelFontIndex]` |
+| `LabelFontSize` | `double` | Manual font size in px. 0 = auto-scale by slice count |
+| `LabelColorStyle` | `int` | 0 = white text / black border. 1 = black text / white border |
+| `LabelBold` | `bool` | When true, labels use `FontWeight.Bold` |
+| `LogSpins` | `bool` | Append each spin result to `./logs/spins.log` |
+| `WinnerMessageTemplate` | `string` | Banner text; `%t%` replaced with slice label. Per-slice `WinnerLabel` overrides this entirely |
+| `DefaultSoundPath` | `string?` | Fallback sound played if the winning slice has no `SoundPath` |
+| `BrightenWinner` | `bool` | White semi-transparent overlay (alpha 80) drawn over winning slice |
+| `DarkenLosers` | `bool` | Dark overlay (alpha 140) drawn over all non-winning slices |
+| `InvertLoserText` | `bool` | Losing slice text colour = border colour (black on black / white on white) |
+
+#### Constructors
+
+- **Runtime**: `WheelViewModel(IFilePickerService, LayoutService, AudioService, LogService, string name)` — normal use.
+- **Design-time**: parameterless `WheelViewModel()` — sets services to `null!`, calls `AddDefaultSlices()`. Used by `Design.DataContext` in `WheelEditorPanel.axaml`. Commands must not be invoked in design mode.
 
 #### Slice weighting system
 
@@ -363,6 +427,8 @@ restores it; the command is disabled when no snapshot exists (`CanUndoWeight()`)
 | `UndoWeight()` | `UndoWeightCommand` | `CanUndoWeight()` | Restores `_weightSnapshot`; disabled when no snapshot |
 | `RandomiseStartAngle()` | `RandomiseStartAngleCommand` | always | Immediately sets `CurrentRotation` to a random 0–360° angle |
 | `RandomiseSliceOrder()` | `RandomiseSliceOrderCommand` | always | Immediately Fisher-Yates shuffles `Slices`; preserves `SelectedSlice` |
+| `BrowseDefaultSoundAsync()` | `BrowseDefaultSoundCommand` | always | Opens sound file picker, sets `DefaultSoundPath` |
+| `RemoveDefaultSound()` | `RemoveDefaultSoundCommand` | always | Nulls `DefaultSoundPath` |
 
 **CommunityToolkit naming rules:**
 - Method `SpinWheelAsync` → command `SpinWheelCommand` (strips `Async` suffix, appends `Command`)
@@ -380,7 +446,9 @@ advances `CurrentRotation` by `_currentVelocity × dt`. The winner is read from
 2. Creates `_spinTcs` and starts the `DispatcherTimer` (~60 fps).
 3. `await _spinTcs.Task` — SPIN button stays disabled for the entire physics simulation.
 4. After await: filters active slices, calculates winner using weighted or equal angles,
-   sets `WinnerIndex` / `WinnerMessage`, plays winner sound, optionally deducts weight.
+   sets `WinnerIndex` / `WinnerMessage` (per-slice `WinnerLabel` overrides template),
+   plays winner sound (per-slice `SoundPath` → fallback `DefaultSoundPath`),
+   appends to log if `LogSpins=true`, optionally deducts weight.
 
 #### Five animation phases
 
@@ -442,6 +510,42 @@ When a new slice is added: `PaletteColors[Slices.Count % PaletteColors.Length]`.
 
 ---
 
+### `Views/WheelEditorPanel.axaml` — per-wheel editor UserControl
+
+**Reusable UserControl** with `x:DataType="vm:WheelViewModel"`. One instance is created
+per tab by the `TabControl.ContentTemplate`. Contains the complete left-panel controls
+and right-panel slice editor for a single wheel.
+
+The `Design.DataContext` uses `WheelViewModel`'s parameterless constructor so the
+designer has something to show.
+
+#### Layout structure
+
+```
+UserControl (x:DataType=WheelViewModel)
+└── Grid (2 columns: 320px fixed, *)
+    ├── [Col 0] ScrollViewer > StackPanel  — Controls
+    │     Grid: [SPIN! button | ↺ Reset button]
+    │     Grid: Speed (1–30) | Friction (1–10)
+    │     StackPanel: "🔀 Randomise start" + "🔀 Randomise order"
+    │     Expander "Appearance" (IsExpanded=True)
+    │       Slice Image Mode ComboBox (Static / Rotating / Upright)
+    │       Labels: Show CheckBox + Bold CheckBox
+    │       Font ComboBox | Size NumericUpDown | Colour ComboBox
+    │     Expander "Chroma Key" (collapsed)
+    │     Expander "Weights" (collapsed)
+    │     Expander "Winner Display" (collapsed)
+    │       Message template TextBox (%t% = slice label; per-slice WinnerLabel overrides)
+    │       Default sound browse + remove
+    │       CheckBox: Brighten winning slice
+    │       CheckBox: Darken losing slices
+    │       CheckBox: Invert loser text
+    │     Expander "Layout" (collapsed) — Save / Load + Log spins checkbox
+    └── [Col 1] Border  — Slice editor (same as before)
+```
+
+---
+
 ### `Views/MainWindow.axaml` — Settings window
 
 **The streamer-facing control panel.** Has `x:DataType="vm:MainWindowViewModel"`.
@@ -450,24 +554,23 @@ When a new slice is added: `PaletteColors[Slices.Count % PaletteColors.Length]`.
 
 ```
 Window (760×640, title "SpinnerWheel — Settings")
-└── Grid (2 columns: 320px fixed, *)
-    ├── [Col 0] ScrollViewer > StackPanel  — Controls
-    │     SpinnerWheel header
-    │     Grid: [SPIN! button | ↺ Reset button]
-    │     Grid: Speed (1–30) | Friction (1–10) — aligned two-column grid
-    │     StackPanel: "🔀 Randomise start" + "🔀 Randomise order" instant-action buttons
-    │     Chroma Key: TextBox + colour swatch flyout (ColorView)
-    │     Weights section:
-    │       "Weights" header + "Use weighted slices" CheckBox
-    │       Default NumericUpDown + "Apply to All" + "Undo" buttons
-    │     Save / Load Layout buttons
-    └── [Col 1] Border  — Slice editor
+└── DockPanel
+    ├── [Top] StackPanel — "SpinnerWheel" header + Separator
+    └── TabControl
+          ItemsSource="{Binding Wheels}"
+          SelectedIndex="{Binding ActiveWheelIndex}"
+          ItemTemplate    → DataTemplate (x:DataType=WheelViewModel)
+                              TextBlock Text="{Binding Name}"
+          ContentTemplate → DataTemplate (x:DataType=WheelViewModel)
+                              WheelEditorPanel
+```
           Grid (3 rows: Auto, *, Auto)
           ├── Toolbar: + − ▲ ▼ buttons
           ├── ListBox: slices (DataTemplate x:DataType=WheelSliceViewModel)
           │     Each row: CheckBox(IsActive) + colour swatch + Label + "(inactive)" hint
           └── ScrollViewer: properties editor (IsVisible=HasSelectedSlice)
                 Label TextBox
+                Winner label TextBox (blank = use template)
                 Colour TextBox + swatch flyout
                 Weight NumericUpDown (0–100)
                 ── Separator ──
@@ -502,7 +605,8 @@ public MainWindow()
     var pickerService = new WindowFilePickerService(this);
     var layoutService = new LayoutService();
     var audioService  = new AudioService();
-    var vm = new MainWindowViewModel(pickerService, layoutService, audioService);
+    var logService    = new LogService();
+    var vm = new MainWindowViewModel(pickerService, layoutService, audioService, logService);
     DataContext = vm;
 
     _spinnerWindow = new SpinnerWindow(vm);
@@ -536,12 +640,16 @@ No guard flag is needed because `SetWindowPos(SWP_NOACTIVATE)` does not trigger 
 
 ```
 Window (620×660, title "SpinnerWheel — OBS Capture", resizable)
-Background = ChromaKeyColor (live)
+x:DataType = MainWindowViewModel
+Background = ActiveWheel.ChromaKeyColor (switches with tab)
 └── Grid (children overlap / Z-stacked)
     ├── Viewbox (Stretch=Uniform)
     │   └── SpinnerWheelControl (600×600)
-    │         Slices, RotationAngle, WinnerIndex, UseWeightedSlices bound from VM
-    └── Border (VerticalAlignment=Center, HorizontalAlignment=Center, IsVisible when WinnerMessage non-empty)
+    │         All properties bound via ActiveWheel.*:
+    │         Slices, RotationAngle, WinnerIndex, UseWeightedSlices,
+    │         SliceImageMode, ShowLabels, LabelFontFamily, LabelFontSize,
+    │         LabelColorStyle, LabelBold, BrightenWinner, DarkenLosers, InvertLoserText
+    └── Border (IsVisible when ActiveWheel.WinnerMessage non-empty)
             Background = #CC000000 (dark semi-transparent pill, CornerRadius=8, Padding=24,10)
             └── TextBlock: WinnerMessage (30px bold white)
 ```
@@ -570,69 +678,122 @@ constructor accepts `MainWindowViewModel` and sets `DataContext`.
 | `Slices` | `ObservableCollection<WheelSliceViewModel>?` | null | Slice data to render |
 | `RotationAngle` | `double` | 0.0 | Clockwise rotation in degrees |
 | `WinnerIndex` | `int` | -1 | Which slice to highlight gold; -1 = none |
-| `UseWeightedSlices` | `bool` | true | When true: proportional arcs; when false: equal arcs |
+| `UseWeightedSlices` | `bool` | false | Proportional arcs when true; equal arcs when false |
+| `SliceImageMode` | `int` | 0 | 0 = Static, 1 = Rotating, 2 = Upright |
+| `ShowLabels` | `bool` | true | Global label visibility |
+| `LabelFontFamily` | `string` | `""` | Font family name; empty = Typeface.Default |
+| `LabelFontSize` | `double` | 0 | 0 = auto (14/12/10 by slice count) |
+| `LabelColorStyle` | `int` | 0 | 0 = white/black border, 1 = black/white border |
+| `LabelBold` | `bool` | false | Bold label weight |
+| `BrightenWinner` | `bool` | false | White overlay (alpha 80) on winning slice |
+| `DarkenLosers` | `bool` | false | Dark overlay (alpha 140) on losing slices |
+| `InvertLoserText` | `bool` | false | Losing label text colour = border colour |
 
-`RotationAngleProperty`, `WinnerIndexProperty`, and `UseWeightedSlicesProperty` are all
-registered with `AffectsRender<>` — changing them automatically triggers a redraw.
-
+All properties except `Slices` are registered with `AffectsRender<>`.
 `SlicesProperty` uses manual `CollectionChanged` + per-item `PropertyChanged` subscriptions
 (all calling `InvalidateVisual()`) because the collection reference rarely changes.
 
-#### Active slice filter in DrawSlices
+#### Constructor
 
-```csharp
-// Only IsActive slices are drawn. Zero-weight slices are NOT excluded from rendering —
-// they stay visible until the start of the next spin so the user can see what won.
-foreach (var s in slices)
-    if (s.IsActive) active.Add(s);
-```
+Sets `TextRenderingMode.Antialias` and `BitmapInterpolationMode.HighQuality` globally.
+**Does NOT** set `EdgeMode.Antialias` on the control — the outer wheel boundary must be
+pixel-hard for clean OBS chroma key capture. Interior antialiasing is enabled separately
+inside the wheel clip (see rendering pipeline below).
 
+#### Active slice filter
+
+Only `IsActive` slices are drawn. Zero-weight slices are NOT excluded from rendering —
+they stay visible until the next spin so the user can see what won.
 When `active` is empty, `DrawEmptyWheel` is shown.
 
 #### Weighted arc calculation
 
 Weight is floored at 1.0 so a weight-0 slice still has a visible arc:
-
 ```csharp
 double totalWeight = useWeightedSlices
     ? active.Sum(s => Math.Max(1.0, s.Weight))
     : active.Count;
-double w       = useWeightedSlices ? Math.Max(1.0, slice.Weight) : 1.0;
-var sliceRad   = (w / totalWeight) * 2 * Math.PI;
 ```
-
-`startAngle` is accumulated across the loop (not recalculated from index × sliceRad),
-which is required for weighted slices where arcs have different sizes.
+Start angles are accumulated across the loop (not recalculated from index × sliceRad),
+required for weighted slices where arcs have different sizes.
 
 #### Winner highlight
 
-`WinnerIndex` is an index into the **full** `Slices` collection. The control finds the
-active slice's position using `slices.IndexOf(slice) == WinnerIndex` so the gold border
-correctly follows the slice even after filtering.
+`WinnerIndex` is an index into the **full** `Slices` collection, found with
+`slices.IndexOf(active[i]) == WinnerIndex` so the gold border follows the slice
+correctly even after the active filter.
 
-#### Rendering pipeline
+#### Rendering pipeline (three-pass)
 
-`Render()`:
-1. Calculates `center` and `radius` from `Bounds`.
-2. Builds rotation matrix: `Translate(-cx,-cy) × Rotate(rad) × Translate(cx,cy)`.
-3. Inside `PushTransform`: draws slices (rotate with wheel).
-4. Outside transform: draws outer ring, pointer, centre pin (fixed in screen space).
+```
+PushGeometryClip(wheelClip)          ← hard outer edge, aliased context
+  PushRenderOptions(Antialias)       ← interior content is smooth
 
-#### DrawPieSlice
+    Pass 1 — Screen-space images (SliceImageMode 0 or 2)
+      For each slice with a bitmap:
+        Build screen-space sector geometry (angles + rotRad)
+        PushGeometryClip(sector)
+          DrawCoverImage(bmp, imageCenter, radius)
+      Static (0): imageCenter = wheel centre
+      Upright (2): imageCenter = center + radius×0.5×(cos,sin) of screen-space midpoint
 
-Handles single-slice (full circle) and general case (pie sector via `StreamGeometry`
-with `ArcTo`, `isLargeArc = true` when arc > 180°).
+    Pass 2 — Rotating fills, borders, images (mode 1)
+      PushTransform(rotMatrix)
+        For each slice:
+          If bitmap + mode 1: PushGeometryClip(sector), DrawCoverImage
+          If no bitmap: DrawGeometry with slice colour fill
+          DrawGeometry border (white 2px; gold 4px for winner)
 
-#### DrawSliceImage / DrawSliceLabel
+    Pass 2.5 — Winner/loser highlight overlays (screen-space, only when WinnerIndex >= 0)
+      If BrightenWinner: white overlay (alpha 80) over winning slice geometry
+      If DarkenLosers:   dark overlay (alpha 140) over each losing slice geometry
+      Geometries are built in screen space (starts[i]+rotRad, ends[i]+rotRad)
 
-- **Image**: at 72% radius when a label also exists (pushed toward rim); 50% radius when alone. Size capped at `min(radius × 0.28, 52px)`.
-- **Label**: at 50% radius (centre of slice); pulled to 32% when an image is also present (pushed inward). Font: 14px (≤4 slices), 12px (5–8), 10px (>8). Truncated at 16 chars.
+    Pass 3 — Upright labels (screen-space, never flipped)
+      For each slice (if ShowLabels):
+        screenMid = (starts[i]+ends[i])/2 + rotRad
+        labelCenter = center + radius×0.68×(cos(screenMid), sin(screenMid))
+        If InvertLoserText and slice is a loser: textMatchesBorder=true → text drawn in border colour
+        DrawSliceLabel(labelCenter, ..., textMatchesBorder)
 
-#### Fixed decorations
+  end PushRenderOptions
+end PushGeometryClip
 
-- `DrawOuterRing` — `#444444` circle, 3px, drawn over slices to clean up jagged edges.
-- `DrawPointer` — red (`#E74C3C`) downward triangle at 12 o'clock, tip on the rim.
-- `DrawCenterPin` — white disc (r=14) + red dot (r=7) at centre.
+Fixed decorations (aliased, outside clip — hard edges for chroma key):
+  DrawOuterRing — #444444 circle, 3px
+  DrawPointer   — red (#E74C3C) downward triangle at 12 o'clock
+  DrawCenterPin — white disc (r=14) + red dot (r=7) at centre
+```
+
+**Why clip-before-antialias:** `PushGeometryClip` is pushed while the context is still
+in its default aliased state, so the clip boundary itself is pixel-hard. Then
+`PushRenderOptions(Antialias)` is pushed inside — all interior drawing is smooth but
+cannot escape the hard clip. This gives a clean chroma key edge with antialiased internals.
+
+#### BuildSliceGeometry
+
+Returns `EllipseGeometry` for a single-slice wheel (full circle), otherwise a
+`StreamGeometry` pie sector (`BeginFigure(centre) → LineTo(start) → ArcTo(end, isLargeArc)`).
+
+#### DrawCoverImage
+
+CSS-cover scaling: `scale = Max(diam/imgW, diam/imgH)`, then centre-crop source rect.
+```csharp
+srcW = srcH = diam / scale
+srcX = (imgW - srcW) / 2
+srcY = (imgH - srcH) / 2
+```
+Caller must push a geometry clip before calling.
+
+#### DrawSliceLabel
+
+- Position: pre-computed `labelCenter` at 68% radius in screen space (Pass 3).
+- Font size: `LabelFontSize > 0` → manual; else 14 (≤4 slices) / 12 (5–8) / 10 (>8).
+- Bold: `new Typeface(family, FontStyle.Normal, FontWeight.Bold)` when `LabelBold=true`.
+- Outline: 8-direction 2px offset draws of border-coloured text, then main text on top.
+  Avalonia's `FormattedText` has no `BuildGeometry`, so this offset technique is used instead.
+- `textMatchesBorder` parameter: when true, `textBrush = borderBrush` (used for `InvertLoserText`).
+- Truncated at 16 chars with `…`.
 
 ---
 
@@ -658,8 +819,34 @@ Concrete implementation using Avalonia's `IStorageProvider` API. Uses
 
 ### `Services/LayoutService.cs`
 
-JSON save/load for `WheelLayout` using `System.Text.Json` with `camelCase` naming policy.
-Both methods are `async` (non-blocking disk I/O). `LoadAsync` returns `null` on failure.
+Two formats, auto-detected by the caller via file extension:
+
+**JSON** (`SaveAsync` / `LoadAsync`) — plain JSON; asset paths are absolute. Not portable if files move.
+
+**ZIP** (`SaveZipAsync` / `LoadZipAsync`) — self-contained bundle. Structure:
+```
+my-wheel.zip
+├── layout.json   (relative paths: "img/foo.png", "snd/bar.mp3")
+├── img/          (copies of every referenced image)
+└── snd/          (copies of every referenced sound)
+```
+- `AssignEntry` deduplicates filenames — two slices with `photo.png` from different folders get `photo.png` and `photo_1.png`.
+- Images/audio stored with `CompressionLevel.NoCompression` (already compressed formats).
+- On load, ZIP is extracted to `%TEMP%\GoldenSpinner\<guid>\`; paths are remapped to absolute temp paths so the rest of the app sees normal file paths.
+- No extra NuGet packages — uses `System.IO.Compression` built into .NET.
+
+`WindowFilePickerService` offers `.zip` as the default format in the save dialog, with `.json` as an alternative. The open dialog accepts both.
+
+---
+
+### `Services/LogService.cs`
+
+Appends spin results to `<AppContext.BaseDirectory>/logs/spins.log`.
+
+- Format: `YYYY-MM-DD | HH:MM:SS | Speed | Friction | Result`
+- A `============================================================` separator line is written before the first spin of each app session (lazy, so a launch with no spins leaves the file untouched).
+- Directory is created on first write; file is always appended — never truncated.
+- Called from `WheelViewModel.SpinWheelAsync()` when `LogSpins=true`.
 
 ---
 
@@ -706,6 +893,26 @@ Used to bind `ColorView.Color` (in colour picker flyouts) to ViewModel string pr
 
 ---
 
+## Build
+
+### Checking compilation without breaking the running app
+
+The app locks `bin\Debug\net9.0\GoldenSpinner.dll` while it's open. Building to the
+default output path will fail with MSB3027 file-lock errors.
+
+**Always build to a temp folder to verify compilation:**
+```bash
+dotnet build -o C:/Temp/gs-build-check
+```
+
+This compiles everything and reports all errors/warnings without touching the `bin\`
+folder the live app has locked. The app can stay open the whole time.
+
+Only ask the user to restart the app when they actually want to test the changes —
+do **not** run `taskkill` or chain kill-then-build commands.
+
+---
+
 ## How to make common changes
 
 ### Add a new property to a slice
@@ -728,7 +935,7 @@ Used to bind `ColorView.Color` (in colour picker flyouts) to ViewModel string pr
 
 ### Change the spin animation feel
 
-Key tuning points in `MainWindowViewModel.cs`:
+Key tuning points in `ViewModels/WheelViewModel.cs`:
 
 - **Wind-up speed** — `_windUpSpeed = 60.0` °/s.
 - **Phase boundaries** — `_accelEndTime = 0.10`, `_fullSpeedEndTime = 0.80` (fractions of total).
@@ -771,3 +978,31 @@ Edit `PaletteColors` in `MainWindowViewModel.cs` — `static readonly string[]` 
   via P/Invoke. `Activate()` steals focus mid-click and causes controls to need multiple clicks.
 - **Do not auto-deactivate slices from `OnWeightChanged`** — weight changes are intentionally
   inert. Only post-spin logic (guarded by `UseWeightedSlices`) should change `IsActive`.
+- **Do not use `DataContext="{Binding X}"` directly on a `TabItem` when the content is a
+  UserControl with compiled bindings.** It causes the UserControl to receive a null/wrong
+  DataContext, greying out all controls. The correct pattern is `TabControl.ItemsSource` +
+  `TabControl.ContentTemplate` with `x:DataType` on the `DataTemplate`:
+  ```xml
+  <TabControl ItemsSource="{Binding Wheels}" SelectedIndex="{Binding ActiveWheelIndex}">
+      <TabControl.ItemTemplate>
+          <DataTemplate x:DataType="vm:WheelViewModel">
+              <TextBlock Text="{Binding Name}" />
+          </DataTemplate>
+      </TabControl.ItemTemplate>
+      <TabControl.ContentTemplate>
+          <DataTemplate x:DataType="vm:WheelViewModel">
+              <views:WheelEditorPanel />
+          </DataTemplate>
+      </TabControl.ContentTemplate>
+  </TabControl>
+  ```
+  The DataTemplate mechanism sets DataContext correctly before the UserControl renders.
+- **Do not run `dotnet build` without `-o <tempdir>` while the app is running** — the output
+  DLL is locked by the running process. Use `dotnet build -o C:/Temp/gs-build-check` instead.
+  Never chain `taskkill` + `dotnet build` — the kill commands hang or fail on Windows.
+- **Do not antialias the outer wheel boundary** — `EdgeMode.Antialias` must NOT be set on
+  `SpinnerWheelControl` itself or on the outer `DrawingContext`. The hard pixel edge is
+  essential for clean OBS chroma key capture. Interior antialiasing is applied via
+  `PushRenderOptions(Antialias)` inside `PushGeometryClip(wheelClip)` only.
+- **Do not draw labels inside `PushTransform(rotMatrix)`** (Pass 2) — labels must be drawn in
+  screen space (Pass 3, after the rotation transform) so they are always upright.

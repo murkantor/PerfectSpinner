@@ -1,296 +1,50 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:GoldenSpinner.ViewModels"
+        xmlns:views="using:GoldenSpinner.Views"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d"
         x:Class="GoldenSpinner.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
-        d:DesignWidth="760" d:DesignHeight="640"
+        d:DesignWidth="940" d:DesignHeight="830"
         Icon="/Assets/avalonia-logo.ico"
         Title="SpinnerWheel — Settings"
         MinWidth="640" MinHeight="480"
-        Width="760" Height="640">
+        Width="940" Height="830">
 
-    <Design.DataContext>
-        <vm:MainWindowViewModel/>
-    </Design.DataContext>
+    <DockPanel Margin="12">
 
-    <!-- ══════════════════════════════════════════════════════════════════
-         Two-column layout:
-           Left  (fixed 320 px) – spin controls + chroma key + layout I/O
-           Right (*            ) – slice editor
-         ══════════════════════════════════════════════════════════════════ -->
-    <Grid ColumnDefinitions="320,*" Margin="12" ColumnSpacing="12">
+        <!-- ── Header (always visible) ───────────────────────────────── -->
+        <StackPanel DockPanel.Dock="Top" Spacing="6" Margin="0,0,0,8">
+            <TextBlock Text="SpinnerWheel" FontSize="20" FontWeight="Bold" />
+            <Separator />
+        </StackPanel>
 
-        <!-- ── LEFT: Controls panel ──────────────────────────────────── -->
-        <ScrollViewer Grid.Column="0"
-                      VerticalScrollBarVisibility="Auto"
-                      HorizontalScrollBarVisibility="Disabled">
-            <StackPanel Spacing="10">
+        <!-- ── Tab control — one tab per wheel ───────────────────────── -->
+        <!--
+            ItemsSource drives both tabs from the Wheels list.
+            ContentTemplate sets DataContext = WheelViewModel for each tab,
+            which WheelEditorPanel consumes via its own x:DataType binding context.
+            SelectedIndex syncs with ActiveWheelIndex so the SpinnerWindow follows.
+        -->
+        <TabControl ItemsSource="{Binding Wheels}"
+                    SelectedIndex="{Binding ActiveWheelIndex}">
 
-                <!-- Header -->
-                <TextBlock Text="SpinnerWheel" FontSize="20" FontWeight="Bold" />
-                <Separator />
+            <TabControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:WheelViewModel">
+                    <TextBlock Text="{Binding Name}" />
+                </DataTemplate>
+            </TabControl.ItemTemplate>
 
-                <!-- ── Spin ──────────────────────────────────────────── -->
-                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
-                    <Button Grid.Column="0"
-                            Content="🎡  SPIN!"
-                            Command="{Binding SpinWheelCommand}"
-                            HorizontalAlignment="Stretch"
-                            FontSize="18" FontWeight="Bold"
-                            Padding="0,14" />
-                    <Button Grid.Column="1"
-                            Content="↺"
-                            Command="{Binding ResetWheelCommand}"
-                            ToolTip.Tip="Reset wheel to zero"
-                            FontSize="18"
-                            Padding="12,14" />
-                </Grid>
+            <TabControl.ContentTemplate>
+                <DataTemplate x:DataType="vm:WheelViewModel">
+                    <views:WheelEditorPanel />
+                </DataTemplate>
+            </TabControl.ContentTemplate>
 
-                <!-- Duration and Inertia aligned in a two-column grid -->
-                <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto"
-                      RowSpacing="6">
+        </TabControl>
 
-                    <TextBlock Grid.Row="0" Grid.Column="0"
-                               Text="Speed (1–30):"
-                               VerticalAlignment="Center" Margin="0,0,10,0" />
-                    <NumericUpDown Grid.Row="0" Grid.Column="1"
-                                  Value="{Binding SpinDurationSeconds}"
-                                  Minimum="1" Maximum="30" Increment="0.5"
-                                  FormatString="F1" />
+    </DockPanel>
 
-                    <TextBlock Grid.Row="1" Grid.Column="0"
-                               Text="Friction (1–10):"
-                               VerticalAlignment="Center" Margin="0,0,10,0" />
-                    <NumericUpDown Grid.Row="1" Grid.Column="1"
-                                  Value="{Binding Friction}"
-                                  Minimum="1" Maximum="10" Increment="1"
-                                  FormatString="F0" />
-
-                </Grid>
-
-                <StackPanel Orientation="Horizontal" Spacing="6">
-                    <Button Content="🔀  Randomise start"
-                            Command="{Binding RandomiseStartAngleCommand}"
-                            ToolTip.Tip="Rotate the wheel to a random angle now"
-                            Padding="8,4" />
-                    <Button Content="🔀  Randomise order"
-                            Command="{Binding RandomiseSliceOrderCommand}"
-                            ToolTip.Tip="Shuffle the slice positions now"
-                            Padding="8,4" />
-                </StackPanel>
-
-                <Separator />
-
-                <!-- ── Chroma key ─────────────────────────────────────── -->
-                <TextBlock Text="Chroma Key" FontWeight="SemiBold" />
-                <TextBlock Text="Spinner window background for OBS keying."
-                           FontSize="11" TextWrapping="Wrap"
-                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
-
-                <StackPanel Orientation="Horizontal" Spacing="8">
-                    <TextBox Text="{Binding ChromaKeyColor}"
-                             Watermark="#RRGGBB" Width="110" />
-                    <!-- Swatch button — click to open colour picker flyout -->
-                    <Button Padding="3" ToolTip.Tip="Pick chroma key colour">
-                        <Border Width="40" Height="26" CornerRadius="3"
-                                Background="{Binding ChromaKeyColor,
-                                             Converter={StaticResource HexColorToBrush}}"
-                                BorderBrush="{DynamicResource SystemControlForegroundBaseMediumBrush}"
-                                BorderThickness="1" />
-                        <Button.Flyout>
-                            <Flyout Placement="Bottom">
-                                <ColorView Color="{Binding ChromaKeyColor,
-                                                   Mode=TwoWay,
-                                                   Converter={StaticResource ColorToHex}}"
-                                           IsAlphaVisible="False" />
-                            </Flyout>
-                        </Button.Flyout>
-                    </Button>
-                </StackPanel>
-
-                <Separator />
-
-                <!-- ── Weights ───────────────────────────────────────────── -->
-                <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                    <TextBlock Text="Weights" FontWeight="SemiBold" VerticalAlignment="Center" />
-                    <CheckBox IsChecked="{Binding UseWeightedSlices}"
-                              Content="Use weighted slices"
-                              VerticalAlignment="Center" />
-                </StackPanel>
-                <TextBlock Text="Set a default weight and apply to all slices. After each spin the winner's weight drops by 1 (min 1)."
-                           FontSize="11" TextWrapping="Wrap"
-                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
-
-                <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="6">
-                    <TextBlock Grid.Column="0" Text="Default:"
-                               VerticalAlignment="Center" />
-                    <NumericUpDown Grid.Column="1"
-                                   Value="{Binding GlobalWeight}"
-                                   Minimum="1" Maximum="100" Increment="1"
-                                   FormatString="F0" />
-                    <Button Grid.Column="2"
-                            Content="Apply to All"
-                            Command="{Binding ApplyWeightToAllCommand}"
-                            Padding="8,4" />
-                    <Button Grid.Column="3"
-                            Content="Undo"
-                            Command="{Binding UndoWeightCommand}"
-                            Padding="8,4" />
-                </Grid>
-
-                <Separator />
-
-                <!-- ── Layout I/O ──────────────────────────────────────── -->
-                <TextBlock Text="Layout" FontWeight="SemiBold" />
-                <StackPanel Orientation="Horizontal" Spacing="8">
-                    <Button Content="💾  Save" Command="{Binding SaveLayoutCommand}" Padding="12,6" />
-                    <Button Content="📂  Load" Command="{Binding LoadLayoutCommand}" Padding="12,6" />
-                </StackPanel>
-
-            </StackPanel>
-        </ScrollViewer>
-
-        <!-- ── RIGHT: Slice editor (unchanged) ───────────────────────── -->
-        <Border Grid.Column="1"
-                BorderThickness="1" CornerRadius="6" Padding="10"
-                BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}">
-            <Grid RowDefinitions="Auto,*,Auto">
-
-                <!-- Slice-list toolbar -->
-                <StackPanel Grid.Row="0" Orientation="Vertical" Spacing="6" Margin="0,0,0,8">
-                    <TextBlock Text="Slices" FontSize="15" FontWeight="SemiBold" />
-                    <StackPanel Orientation="Horizontal" Spacing="4">
-                        <Button Content="+"
-                                Command="{Binding AddSliceCommand}"
-                                ToolTip.Tip="Add new slice"
-                                Width="34" Height="30" />
-                        <Button Content="−"
-                                Command="{Binding RemoveSliceCommand}"
-                                ToolTip.Tip="Remove selected slice"
-                                Width="34" Height="30" />
-                        <Button Content="▲"
-                                Command="{Binding MoveUpCommand}"
-                                ToolTip.Tip="Move slice up"
-                                Width="34" Height="30" />
-                        <Button Content="▼"
-                                Command="{Binding MoveDownCommand}"
-                                ToolTip.Tip="Move slice down"
-                                Width="34" Height="30" />
-                    </StackPanel>
-                </StackPanel>
-
-                <!-- Slice list -->
-                <ListBox Grid.Row="1"
-                         ItemsSource="{Binding Slices}"
-                         SelectedItem="{Binding SelectedSlice}"
-                         MinHeight="120"
-                         ScrollViewer.VerticalScrollBarVisibility="Auto">
-                    <ListBox.ItemTemplate>
-                        <DataTemplate x:DataType="vm:WheelSliceViewModel">
-                            <StackPanel Orientation="Horizontal" Spacing="8" Margin="2">
-                                <CheckBox IsChecked="{Binding IsActive}"
-                                          ToolTip.Tip="Include in wheel"
-                                          VerticalAlignment="Center" />
-                                <Border Width="20" Height="20" CornerRadius="3"
-                                        Background="{Binding ColorHex, Converter={StaticResource HexColorToBrush}}"
-                                        VerticalAlignment="Center" />
-                                <TextBlock Text="{Binding Label}" VerticalAlignment="Center" />
-                                <TextBlock Text="(inactive)" FontSize="10"
-                                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
-                                           IsVisible="{Binding !IsActive}"
-                                           VerticalAlignment="Center"/>
-
-                            </StackPanel>
-                        </DataTemplate>
-                    </ListBox.ItemTemplate>
-                </ListBox>
-
-                <!-- Properties editor (hidden when nothing is selected) -->
-                <ScrollViewer Grid.Row="2" MaxHeight="330"
-                              IsVisible="{Binding HasSelectedSlice}"
-                              Margin="0,8,0,0">
-                    <StackPanel Spacing="6">
-                        <TextBlock Text="Slice Properties"
-                                   FontWeight="SemiBold" FontSize="13"
-                                   Margin="0,0,0,2" />
-
-                        <TextBlock Text="Label:" />
-                        <TextBox Text="{Binding SelectedSlice.Label}"
-                                 Watermark="Enter a label…"
-                                 MaxLength="50" />
-
-                        <TextBlock Text="Colour:" Margin="0,4,0,0" />
-                        <StackPanel Orientation="Horizontal" Spacing="6">
-                            <TextBox Text="{Binding SelectedSlice.ColorHex}"
-                                     Watermark="#RRGGBB"
-                                     Width="110" MaxLength="9" />
-                            <!-- Swatch button — click to open colour picker flyout -->
-                            <Button Padding="3" ToolTip.Tip="Pick slice colour">
-                                <Border Width="32" Height="26" CornerRadius="3"
-                                        Background="{Binding SelectedSlice.ColorHex,
-                                                     Converter={StaticResource HexColorToBrush}}"
-                                        BorderBrush="{DynamicResource SystemControlForegroundBaseMediumBrush}"
-                                        BorderThickness="1" />
-                                <Button.Flyout>
-                                    <Flyout Placement="Bottom">
-                                        <ColorView Color="{Binding SelectedSlice.ColorHex,
-                                                           Mode=TwoWay,
-                                                           Converter={StaticResource ColorToHex}}"
-                                                   IsAlphaVisible="False" />
-                                    </Flyout>
-                                </Button.Flyout>
-                            </Button>
-                        </StackPanel>
-
-                        <TextBlock Text="Weight:" Margin="0,4,0,0" />
-                        <NumericUpDown Value="{Binding SelectedSlice.Weight}"
-                                       Minimum="0" Maximum="100" Increment="1"
-                                       FormatString="F0" />
-
-                        <Separator Margin="0,6,0,2" />
-
-                        <TextBlock Text="Image:" Margin="0,4,0,0" />
-                        <TextBlock Text="{Binding SelectedSlice.ImagePath}"
-                                   FontSize="11" TextTrimming="CharacterEllipsis"
-                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
-                                   IsVisible="{Binding SelectedSlice.ImagePath,
-                                               Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-                        <StackPanel Orientation="Horizontal" Spacing="4">
-                            <Button Content="🖼  Browse Image…"
-                                    Command="{Binding AssignImageCommand}"
-                                    Padding="8,4" />
-                            <Button Content="✕ Remove"
-                                    Command="{Binding RemoveImageCommand}"
-                                    Padding="8,4"
-                                    IsVisible="{Binding SelectedSlice.ImagePath,
-                                                Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-                        </StackPanel>
-
-                        <TextBlock Text="Sound:" Margin="0,4,0,0" />
-                        <TextBlock Text="{Binding SelectedSlice.SoundPath}"
-                                   FontSize="11" TextTrimming="CharacterEllipsis"
-                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
-                                   IsVisible="{Binding SelectedSlice.SoundPath,
-                                               Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-                        <StackPanel Orientation="Horizontal" Spacing="4">
-                            <Button Content="🔊  Browse Sound…"
-                                    Command="{Binding AssignSoundCommand}"
-                                    Padding="8,4" />
-                            <Button Content="✕ Remove"
-                                    Command="{Binding RemoveSoundCommand}"
-                                    Padding="8,4"
-                                    IsVisible="{Binding SelectedSlice.SoundPath,
-                                                Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-                        </StackPanel>
-
-                    </StackPanel>
-                </ScrollViewer>
-
-            </Grid>
-        </Border>
-
-    </Grid>
 </Window>

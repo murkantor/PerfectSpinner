@@ -1,0 +1,382 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:GoldenSpinner.ViewModels"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d"
+             x:Class="GoldenSpinner.Views.WheelEditorPanel"
+             x:DataType="vm:WheelViewModel">
+
+    <Design.DataContext>
+        <vm:WheelViewModel />
+    </Design.DataContext>
+
+    <Grid ColumnDefinitions="320,*" Margin="0,8,0,0" ColumnSpacing="12">
+
+        <!-- ── LEFT: Controls panel ──────────────────────────────────── -->
+        <ScrollViewer Grid.Column="0"
+                      VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled">
+            <StackPanel Spacing="10">
+
+                <!-- ── Spin ──────────────────────────────────────────── -->
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                    <Button Grid.Column="0"
+                            Content="🎡  SPIN!"
+                            Command="{Binding SpinWheelCommand}"
+                            HorizontalAlignment="Stretch"
+                            FontSize="18" FontWeight="Bold"
+                            Padding="0,14" />
+                    <Button Grid.Column="1"
+                            Content="↺"
+                            Command="{Binding ResetWheelCommand}"
+                            ToolTip.Tip="Reset wheel to zero"
+                            FontSize="18"
+                            Padding="12,14" />
+                </Grid>
+
+                <!-- Speed and Friction -->
+                <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto" RowSpacing="6">
+
+                    <TextBlock Grid.Row="0" Grid.Column="0"
+                               Text="Speed (1–30):"
+                               VerticalAlignment="Center" Margin="0,0,10,0" />
+                    <NumericUpDown Grid.Row="0" Grid.Column="1"
+                                  Value="{Binding SpinDurationSeconds}"
+                                  Minimum="1" Maximum="30" Increment="0.5"
+                                  FormatString="F1" />
+
+                    <TextBlock Grid.Row="1" Grid.Column="0"
+                               Text="Friction (1–10):"
+                               VerticalAlignment="Center" Margin="0,0,10,0" />
+                    <NumericUpDown Grid.Row="1" Grid.Column="1"
+                                  Value="{Binding Friction}"
+                                  Minimum="1" Maximum="10" Increment="1"
+                                  FormatString="F0" />
+
+                </Grid>
+
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <Button Content="🔀  Randomise start"
+                            Command="{Binding RandomiseStartAngleCommand}"
+                            ToolTip.Tip="Rotate the wheel to a random angle now"
+                            Padding="8,4" />
+                    <Button Content="🔀  Randomise order"
+                            Command="{Binding RandomiseSliceOrderCommand}"
+                            ToolTip.Tip="Shuffle the slice positions now"
+                            Padding="8,4" />
+                </StackPanel>
+
+                <!-- ── Appearance expander ───────────────────────────── -->
+                <Expander Header="Appearance" IsExpanded="True" HorizontalAlignment="Stretch">
+                    <StackPanel Spacing="8" Margin="0,6,0,0">
+
+                        <TextBlock Text="Slice Image Mode" FontWeight="SemiBold" />
+                        <ComboBox SelectedIndex="{Binding SliceImageMode}"
+                                  HorizontalAlignment="Stretch"
+                                  ToolTip.Tip="How per-slice images are rendered on the wheel">
+                            <ComboBoxItem Content="Static — image fixed, wedge rotates over it" />
+                            <ComboBoxItem Content="Rotating — image pivots with its slice" />
+                            <ComboBoxItem Content="Upright — image orbits, stays right-side up" />
+                        </ComboBox>
+
+                        <Separator />
+
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <TextBlock Text="Labels" FontWeight="SemiBold" VerticalAlignment="Center" />
+                            <CheckBox IsChecked="{Binding ShowLabels}"
+                                      Content="Show"
+                                      VerticalAlignment="Center" />
+                            <CheckBox IsChecked="{Binding LabelBold}"
+                                      Content="Bold"
+                                      VerticalAlignment="Center" />
+                        </StackPanel>
+
+                        <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto" RowSpacing="6">
+                            <TextBlock Grid.Row="0" Grid.Column="0"
+                                       Text="Font:" VerticalAlignment="Center" Margin="0,0,10,0" />
+                            <ComboBox Grid.Row="0" Grid.Column="1"
+                                      ItemsSource="{x:Static vm:WheelViewModel.AvailableFontNames}"
+                                      SelectedIndex="{Binding LabelFontIndex}"
+                                      HorizontalAlignment="Stretch" />
+
+                            <TextBlock Grid.Row="1" Grid.Column="0"
+                                       Text="Size:" VerticalAlignment="Center" Margin="0,0,10,0" />
+                            <NumericUpDown Grid.Row="1" Grid.Column="1"
+                                           Value="{Binding LabelFontSize}"
+                                           Minimum="0" Maximum="72" Increment="1"
+                                           FormatString="F0"
+                                           Watermark="0 = auto" />
+
+                            <TextBlock Grid.Row="2" Grid.Column="0"
+                                       Text="Colour:" VerticalAlignment="Center" Margin="0,0,10,0" />
+                            <ComboBox Grid.Row="2" Grid.Column="1"
+                                      SelectedIndex="{Binding LabelColorStyle}"
+                                      HorizontalAlignment="Stretch">
+                                <ComboBoxItem Content="White with black border" />
+                                <ComboBoxItem Content="Black with white border" />
+                            </ComboBox>
+                        </Grid>
+
+                    </StackPanel>
+                </Expander>
+
+                <!-- ── Chroma Key expander ────────────────────────────── -->
+                <Expander Header="Chroma Key" IsExpanded="False" HorizontalAlignment="Stretch">
+                    <StackPanel Spacing="8" Margin="0,6,0,0">
+
+                        <TextBlock Text="Spinner window background for OBS keying."
+                                   FontSize="11" TextWrapping="Wrap"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <TextBox Text="{Binding ChromaKeyColor}"
+                                     Watermark="#RRGGBB" Width="110" />
+                            <Button Padding="3" ToolTip.Tip="Pick chroma key colour">
+                                <Border Width="40" Height="26" CornerRadius="3"
+                                        Background="{Binding ChromaKeyColor,
+                                                     Converter={StaticResource HexColorToBrush}}"
+                                        BorderBrush="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                                        BorderThickness="1" />
+                                <Button.Flyout>
+                                    <Flyout Placement="Bottom">
+                                        <ColorView Color="{Binding ChromaKeyColor,
+                                                           Mode=TwoWay,
+                                                           Converter={StaticResource ColorToHex}}"
+                                                   IsAlphaVisible="False" />
+                                    </Flyout>
+                                </Button.Flyout>
+                            </Button>
+                        </StackPanel>
+
+                    </StackPanel>
+                </Expander>
+
+                <!-- ── Weights expander ───────────────────────────────── -->
+                <Expander Header="Weights" IsExpanded="False" HorizontalAlignment="Stretch">
+                    <StackPanel Spacing="8" Margin="0,6,0,0">
+
+                        <CheckBox IsChecked="{Binding UseWeightedSlices}"
+                                  Content="Use weighted slices" />
+                        <TextBlock Text="Set a default weight and apply to all slices. After each spin the winner's weight drops by 1 (min 1)."
+                                   FontSize="11" TextWrapping="Wrap"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+
+                        <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="6">
+                            <TextBlock Grid.Column="0" Text="Default:"
+                                       VerticalAlignment="Center" />
+                            <NumericUpDown Grid.Column="1"
+                                           Value="{Binding GlobalWeight}"
+                                           Minimum="1" Maximum="100" Increment="1"
+                                           FormatString="F0" />
+                            <Button Grid.Column="2"
+                                    Content="Apply to All"
+                                    Command="{Binding ApplyWeightToAllCommand}"
+                                    Padding="8,4" />
+                            <Button Grid.Column="3"
+                                    Content="Undo"
+                                    Command="{Binding UndoWeightCommand}"
+                                    Padding="8,4" />
+                        </Grid>
+
+                    </StackPanel>
+                </Expander>
+
+                <!-- ── Winner Display expander ───────────────────────── -->
+                <Expander Header="Winner Display" IsExpanded="False" HorizontalAlignment="Stretch">
+                    <StackPanel Spacing="8" Margin="0,6,0,0">
+
+                        <TextBlock Text="Message template — use %t% for the slice label. Per-slice winner labels override this."
+                                   FontSize="11" TextWrapping="Wrap"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                        <TextBox Text="{Binding WinnerMessageTemplate}"
+                                 Watermark="e.g. 🎉  %t%!" />
+
+                        <TextBlock Text="Default sound:" Margin="0,6,0,0" />
+                        <TextBlock Text="{Binding DefaultSoundPath}"
+                                   FontSize="11" TextTrimming="CharacterEllipsis"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                                   IsVisible="{Binding DefaultSoundPath,
+                                               Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                        <StackPanel Orientation="Horizontal" Spacing="4">
+                            <Button Content="🔊  Browse Sound…"
+                                    Command="{Binding BrowseDefaultSoundCommand}"
+                                    Padding="8,4" />
+                            <Button Content="✕ Remove"
+                                    Command="{Binding RemoveDefaultSoundCommand}"
+                                    Padding="8,4"
+                                    IsVisible="{Binding DefaultSoundPath,
+                                                Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                        </StackPanel>
+
+                        <Separator Margin="0,2,0,2" />
+
+                        <CheckBox IsChecked="{Binding BrightenWinner}"
+                                  Content="Brighten winning slice" />
+                        <CheckBox IsChecked="{Binding DarkenLosers}"
+                                  Content="Darken losing slices" />
+                        <CheckBox IsChecked="{Binding InvertLoserText}"
+                                  Content="Invert loser text (swap text and border colours)" />
+
+                    </StackPanel>
+                </Expander>
+
+                <!-- ── Layout expander ────────────────────────────────── -->
+                <Expander Header="Layout" IsExpanded="False" HorizontalAlignment="Stretch">
+                    <StackPanel Spacing="8" Margin="0,6,0,0">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Button Content="💾  Save" Command="{Binding SaveLayoutCommand}" Padding="12,6" />
+                            <Button Content="📂  Load" Command="{Binding LoadLayoutCommand}" Padding="12,6" />
+                        </StackPanel>
+                        <CheckBox IsChecked="{Binding LogSpins}"
+                                  Content="Log spins to file (./logs/spins.log)" />
+                    </StackPanel>
+                </Expander>
+
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- ── RIGHT: Slice editor ────────────────────────────────────── -->
+        <Border Grid.Column="1"
+                BorderThickness="1" CornerRadius="6" Padding="10"
+                BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}">
+            <Grid RowDefinitions="Auto,*,Auto">
+
+                <!-- Slice-list toolbar -->
+                <StackPanel Grid.Row="0" Orientation="Vertical" Spacing="6" Margin="0,0,0,8">
+                    <TextBlock Text="Slices" FontSize="15" FontWeight="SemiBold" />
+                    <StackPanel Orientation="Horizontal" Spacing="4">
+                        <Button Content="+"
+                                Command="{Binding AddSliceCommand}"
+                                ToolTip.Tip="Add new slice"
+                                Width="34" Height="30" />
+                        <Button Content="−"
+                                Command="{Binding RemoveSliceCommand}"
+                                ToolTip.Tip="Remove selected slice"
+                                Width="34" Height="30" />
+                        <Button Content="▲"
+                                Command="{Binding MoveUpCommand}"
+                                ToolTip.Tip="Move slice up"
+                                Width="34" Height="30" />
+                        <Button Content="▼"
+                                Command="{Binding MoveDownCommand}"
+                                ToolTip.Tip="Move slice down"
+                                Width="34" Height="30" />
+                    </StackPanel>
+                </StackPanel>
+
+                <!-- Slice list -->
+                <ListBox Grid.Row="1"
+                         ItemsSource="{Binding Slices}"
+                         SelectedItem="{Binding SelectedSlice}"
+                         MinHeight="120"
+                         ScrollViewer.VerticalScrollBarVisibility="Auto">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate x:DataType="vm:WheelSliceViewModel">
+                            <StackPanel Orientation="Horizontal" Spacing="8" Margin="2">
+                                <CheckBox IsChecked="{Binding IsActive}"
+                                          ToolTip.Tip="Include in wheel"
+                                          VerticalAlignment="Center" />
+                                <Border Width="20" Height="20" CornerRadius="3"
+                                        Background="{Binding ColorHex, Converter={StaticResource HexColorToBrush}}"
+                                        VerticalAlignment="Center" />
+                                <TextBlock Text="{Binding Label}" VerticalAlignment="Center" />
+                                <TextBlock Text="(inactive)" FontSize="10"
+                                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                                           IsVisible="{Binding !IsActive}"
+                                           VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+
+                <!-- Properties editor -->
+                <ScrollViewer Grid.Row="2" MaxHeight="330"
+                              IsVisible="{Binding HasSelectedSlice}"
+                              Margin="0,8,0,0">
+                    <StackPanel Spacing="6">
+                        <TextBlock Text="Slice Properties"
+                                   FontWeight="SemiBold" FontSize="13"
+                                   Margin="0,0,0,2" />
+
+                        <TextBlock Text="Label:" />
+                        <TextBox Text="{Binding SelectedSlice.Label}"
+                                 Watermark="Enter a label…"
+                                 MaxLength="50" />
+
+                        <TextBlock Text="Winner label:" Margin="0,4,0,0" />
+                        <TextBox Text="{Binding SelectedSlice.WinnerLabel}"
+                                 Watermark="Blank = use default template"
+                                 MaxLength="200" />
+
+                        <TextBlock Text="Colour:" Margin="0,4,0,0" />
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <TextBox Text="{Binding SelectedSlice.ColorHex}"
+                                     Watermark="#RRGGBB"
+                                     Width="110" MaxLength="9" />
+                            <Button Padding="3" ToolTip.Tip="Pick slice colour">
+                                <Border Width="32" Height="26" CornerRadius="3"
+                                        Background="{Binding SelectedSlice.ColorHex,
+                                                     Converter={StaticResource HexColorToBrush}}"
+                                        BorderBrush="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                                        BorderThickness="1" />
+                                <Button.Flyout>
+                                    <Flyout Placement="Bottom">
+                                        <ColorView Color="{Binding SelectedSlice.ColorHex,
+                                                           Mode=TwoWay,
+                                                           Converter={StaticResource ColorToHex}}"
+                                                   IsAlphaVisible="False" />
+                                    </Flyout>
+                                </Button.Flyout>
+                            </Button>
+                        </StackPanel>
+
+                        <TextBlock Text="Weight:" Margin="0,4,0,0" />
+                        <NumericUpDown Value="{Binding SelectedSlice.Weight}"
+                                       Minimum="0" Maximum="100" Increment="1"
+                                       FormatString="F0" />
+
+                        <Separator Margin="0,6,0,2" />
+
+                        <TextBlock Text="Image:" Margin="0,4,0,0" />
+                        <TextBlock Text="{Binding SelectedSlice.ImagePath}"
+                                   FontSize="11" TextTrimming="CharacterEllipsis"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                                   IsVisible="{Binding SelectedSlice.ImagePath,
+                                               Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                        <StackPanel Orientation="Horizontal" Spacing="4">
+                            <Button Content="🖼  Browse Image…"
+                                    Command="{Binding AssignImageCommand}"
+                                    Padding="8,4" />
+                            <Button Content="✕ Remove"
+                                    Command="{Binding RemoveImageCommand}"
+                                    Padding="8,4"
+                                    IsVisible="{Binding SelectedSlice.ImagePath,
+                                                Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                        </StackPanel>
+
+                        <TextBlock Text="Sound:" Margin="0,4,0,0" />
+                        <TextBlock Text="{Binding SelectedSlice.SoundPath}"
+                                   FontSize="11" TextTrimming="CharacterEllipsis"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                                   IsVisible="{Binding SelectedSlice.SoundPath,
+                                               Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                        <StackPanel Orientation="Horizontal" Spacing="4">
+                            <Button Content="🔊  Browse Sound…"
+                                    Command="{Binding AssignSoundCommand}"
+                                    Padding="8,4" />
+                            <Button Content="✕ Remove"
+                                    Command="{Binding RemoveSoundCommand}"
+                                    Padding="8,4"
+                                    IsVisible="{Binding SelectedSlice.SoundPath,
+                                                Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                        </StackPanel>
+
+                    </StackPanel>
+                </ScrollViewer>
+
+            </Grid>
+        </Border>
+
+    </Grid>
+</UserControl>

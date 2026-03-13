@@ -19,6 +19,12 @@ namespace GoldenSpinner.Models
         /// <summary>Absolute path to the sound file (WAV or MP3). Null if none.</summary>
         public string? SoundPath { get; set; }
 
+        /// <summary>
+        /// Overrides the winner message template when this slice wins.
+        /// Null/empty = use the wheel's WinnerMessageTemplate.
+        /// </summary>
+        public string? WinnerLabel { get; set; }
+
         /// <summary>Background color as a CSS hex string, e.g. "#E74C3C".</summary>
         public string ColorHex { get; set; } = "#E74C3C";
 

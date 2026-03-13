@@ -22,12 +22,11 @@ namespace GoldenSpinner.Controls
     /// • The fixed pointer indicator sits at the top of the wheel in screen space.
     /// • The entire slice layer is rotated by <see cref="RotationAngle"/> degrees (clockwise).
     ///
-    /// Winner determination
-    /// ────────────────────
-    /// After the spin the pointer (top, –90°) sees canvas angle:
-    ///     pointerAngle = (360 – R mod 360) mod 360
-    /// Slice i occupies [i·sliceDeg, (i+1)·sliceDeg), so:
-    ///     winnerIndex = floor(pointerAngle / sliceDeg)
+    /// Per-slice image modes  (<see cref="SliceImageMode"/>)
+    /// ──────────────────────
+    ///   0  Static   – image fixed in screen space; the rotating pie wedge is a window over it.
+    ///   1  Rotating – image rotates with its slice (bottom anchored at wheel centre).
+    ///   2  Upright  – image orbits with its slice but never rotates; always stays right-side up.
     /// </summary>
     public sealed class SpinnerWheelControl : Control
     {
@@ -45,6 +44,40 @@ namespace GoldenSpinner.Controls
 
         public static readonly StyledProperty<bool> UseWeightedSlicesProperty =
             AvaloniaProperty.Register<SpinnerWheelControl, bool>(nameof(UseWeightedSlices), false);
+
+        /// <summary>0 = Static, 1 = Rotating, 2 = Upright.</summary>
+        public static readonly StyledProperty<int> SliceImageModeProperty =
+            AvaloniaProperty.Register<SpinnerWheelControl, int>(nameof(SliceImageMode), 0);
+
+        public static readonly StyledProperty<bool> ShowLabelsProperty =
+            AvaloniaProperty.Register<SpinnerWheelControl, bool>(nameof(ShowLabels), true);
+
+        public static readonly StyledProperty<string> LabelFontFamilyProperty =
+            AvaloniaProperty.Register<SpinnerWheelControl, string>(nameof(LabelFontFamily), "");
+
+        /// <summary>Font size in pixels. 0 = auto-scale by slice count.</summary>
+        public static readonly StyledProperty<double> LabelFontSizeProperty =
+            AvaloniaProperty.Register<SpinnerWheelControl, double>(nameof(LabelFontSize), 0);
+
+        /// <summary>0 = white text / black border. 1 = black text / white border.</summary>
+        public static readonly StyledProperty<int> LabelColorStyleProperty =
+            AvaloniaProperty.Register<SpinnerWheelControl, int>(nameof(LabelColorStyle), 0);
+
+        /// <summary>When true, labels are drawn with bold weight.</summary>
+        public static readonly StyledProperty<bool> LabelBoldProperty =
+            AvaloniaProperty.Register<SpinnerWheelControl, bool>(nameof(LabelBold), false);
+
+        /// <summary>When true, a white overlay is drawn over the winning slice to brighten it.</summary>
+        public static readonly StyledProperty<bool> BrightenWinnerProperty =
+            AvaloniaProperty.Register<SpinnerWheelControl, bool>(nameof(BrightenWinner), false);
+
+        /// <summary>When true, a dark overlay is drawn over all losing slices.</summary>
+        public static readonly StyledProperty<bool> DarkenLosersProperty =
+            AvaloniaProperty.Register<SpinnerWheelControl, bool>(nameof(DarkenLosers), false);
+
+        /// <summary>When true, the border colour is applied as text colour on losing slices.</summary>
+        public static readonly StyledProperty<bool> InvertLoserTextProperty =
+            AvaloniaProperty.Register<SpinnerWheelControl, bool>(nameof(InvertLoserText), false);
 
         // ── Property accessors ───────────────────────────────────────────────
 
@@ -72,11 +105,82 @@ namespace GoldenSpinner.Controls
             set => SetValue(UseWeightedSlicesProperty, value);
         }
 
+        public int SliceImageMode
+        {
+            get => GetValue(SliceImageModeProperty);
+            set => SetValue(SliceImageModeProperty, value);
+        }
+
+        public bool ShowLabels
+        {
+            get => GetValue(ShowLabelsProperty);
+            set => SetValue(ShowLabelsProperty, value);
+        }
+
+        public string LabelFontFamily
+        {
+            get => GetValue(LabelFontFamilyProperty);
+            set => SetValue(LabelFontFamilyProperty, value);
+        }
+
+        public double LabelFontSize
+        {
+            get => GetValue(LabelFontSizeProperty);
+            set => SetValue(LabelFontSizeProperty, value);
+        }
+
+        public int LabelColorStyle
+        {
+            get => GetValue(LabelColorStyleProperty);
+            set => SetValue(LabelColorStyleProperty, value);
+        }
+
+        public bool LabelBold
+        {
+            get => GetValue(LabelBoldProperty);
+            set => SetValue(LabelBoldProperty, value);
+        }
+
+        public bool BrightenWinner
+        {
+            get => GetValue(BrightenWinnerProperty);
+            set => SetValue(BrightenWinnerProperty, value);
+        }
+
+        public bool DarkenLosers
+        {
+            get => GetValue(DarkenLosersProperty);
+            set => SetValue(DarkenLosersProperty, value);
+        }
+
+        public bool InvertLoserText
+        {
+            get => GetValue(InvertLoserTextProperty);
+            set => SetValue(InvertLoserTextProperty, value);
+        }
+
+        // ── Constructor ───────────────────────────────────────────────────────
+
+        public SpinnerWheelControl()
+        {
+            // Text and images are antialiased globally.
+            // EdgeMode is intentionally left at default (Aliased) so the outer wheel
+            // boundary stays pixel-hard for clean OBS chroma key capture.
+            // Interior antialiasing is enabled via PushRenderOptions inside the wheel clip.
+            RenderOptions.SetTextRenderingMode(this, TextRenderingMode.Antialias);
+            RenderOptions.SetBitmapInterpolationMode(this, BitmapInterpolationMode.HighQuality);
+        }
+
         // ── Static constructor – wire up AffectsRender ───────────────────────
 
         static SpinnerWheelControl()
         {
-            AffectsRender<SpinnerWheelControl>(RotationAngleProperty, WinnerIndexProperty, UseWeightedSlicesProperty);
+            AffectsRender<SpinnerWheelControl>(
+                RotationAngleProperty, WinnerIndexProperty,
+                UseWeightedSlicesProperty, SliceImageModeProperty,
+                ShowLabelsProperty, LabelFontFamilyProperty,
+                LabelFontSizeProperty, LabelColorStyleProperty, LabelBoldProperty,
+                BrightenWinnerProperty, DarkenLosersProperty, InvertLoserTextProperty);
         }
 
         // ── Property change tracking ─────────────────────────────────────────
@@ -87,14 +191,12 @@ namespace GoldenSpinner.Controls
 
             if (change.Property == SlicesProperty)
             {
-                // Unsubscribe from the old collection and its items
                 if (change.OldValue is ObservableCollection<WheelSliceViewModel> oldCol)
                 {
                     oldCol.CollectionChanged -= OnCollectionChanged;
                     foreach (var s in oldCol) s.PropertyChanged -= OnSliceChanged;
                 }
 
-                // Subscribe to the new collection and its items
                 if (change.NewValue is ObservableCollection<WheelSliceViewModel> newCol)
                 {
                     newCol.CollectionChanged += OnCollectionChanged;
@@ -127,11 +229,10 @@ namespace GoldenSpinner.Controls
 
             if (bounds.Width < 1 || bounds.Height < 1) return;
 
-            var size = Math.Min(bounds.Width, bounds.Height);
-            var cx = bounds.Width / 2;
-            var cy = bounds.Height / 2;
+            var size   = Math.Min(bounds.Width, bounds.Height);
+            var cx     = bounds.Width / 2;
+            var cy     = bounds.Height / 2;
             var center = new Point(cx, cy);
-            // Leave room for the pointer above the wheel
             var radius = size / 2 - 18;
 
             if (slices == null || slices.Count == 0)
@@ -141,32 +242,6 @@ namespace GoldenSpinner.Controls
                 return;
             }
 
-            // Rotation matrix around the wheel centre
-            var rad = RotationAngle * Math.PI / 180.0;
-            var rotMatrix =
-                Matrix.CreateTranslation(-cx, -cy) *
-                Matrix.CreateRotation(rad) *
-                Matrix.CreateTranslation(cx, cy);
-
-            // ── Rotating layer (slices) ──────────────────────────────────────
-            using (ctx.PushTransform(rotMatrix))
-            {
-                DrawSlices(ctx, center, radius, slices, UseWeightedSlices);
-            }
-
-            // ── Fixed layer (drawn on top, no rotation) ──────────────────────
-            DrawOuterRing(ctx, center, radius);
-            DrawPointer(ctx, center, radius);
-            DrawCenterPin(ctx, center);
-        }
-
-        // ── Slice drawing ─────────────────────────────────────────────────────
-
-        private void DrawSlices(DrawingContext ctx, Point center, double radius,
-            IList<WheelSliceViewModel> slices, bool useWeightedSlices)
-        {
-            // Render all active slices regardless of weight — a weight-0 slice stays
-            // visible until the next spin deactivates it, so the user can see what won.
             var active = new List<WheelSliceViewModel>();
             foreach (var s in slices)
                 if (s.IsActive) active.Add(s);
@@ -174,68 +249,196 @@ namespace GoldenSpinner.Controls
             if (active.Count == 0)
             {
                 DrawEmptyWheel(ctx, center, radius);
+                DrawOuterRing(ctx, center, radius);
+                DrawPointer(ctx, center, radius);
+                DrawCenterPin(ctx, center);
                 return;
             }
 
-            double totalWeight = useWeightedSlices
-                ? active.Sum(s => Math.Max(1.0, s.Weight))
-                : active.Count;
+            bool   useWeighted = UseWeightedSlices;
+            double totalWeight = useWeighted ? active.Sum(s => Math.Max(1.0, s.Weight)) : active.Count;
+            int    n           = active.Count;
+            int    imageMode       = SliceImageMode;
+            bool   showLabels      = ShowLabels;
+            string labelFont       = LabelFontFamily;
+            double labelFontSize   = LabelFontSize;
+            int    labelColorStyle = LabelColorStyle;
+            bool   labelBold       = LabelBold;
+            bool   brightenWinner  = BrightenWinner;
+            bool   darkenLosers    = DarkenLosers;
+            bool   invertLoserText = InvertLoserText;
 
-            var borderPen = new Pen(Brushes.White, 2);
-            var winnerPen = new Pen(new SolidColorBrush(Color.Parse("#FFD700")), 4);  // gold highlight
-
-            double startAngle = -Math.PI / 2;
-            var n = active.Count;
+            // Pre-compute per-slice angles.
+            var starts   = new double[n];
+            var ends     = new double[n];
+            var isWinner = new bool[n];
+            double ang = -Math.PI / 2;
             for (int i = 0; i < n; i++)
             {
-                var slice    = active[i];
-                // Floor weight at 1 so a weight-0 slice still has a visible arc.
-                double w     = useWeightedSlices ? Math.Max(1.0, slice.Weight) : 1.0;
-                var sliceRad = (w / totalWeight) * 2 * Math.PI;
-                var endAngle = startAngle + sliceRad;
-                var midAngle = startAngle + sliceRad / 2;
-
-                // Fill colour
-                Color color;
-                try { color = Color.Parse(slice.ColorHex); }
-                catch { color = Color.Parse("#808080"); }
-
-                // Highlight winner — WinnerIndex is an index into the full Slices collection.
-                bool isWinner = slices.IndexOf(slice) == WinnerIndex;
-                IBrush fill = isWinner
-                    ? new SolidColorBrush(Lighten(color, 0.2f))
-                    : new SolidColorBrush(color);
-
-                DrawPieSlice(ctx, center, radius, startAngle, endAngle, fill,
-                    isWinner ? winnerPen : borderPen, n == 1);
-
-                bool hasImage = slice.LoadedBitmap is not null;
-
-                // Image near the outer edge; pull it further out when a label also exists
-                if (slice.LoadedBitmap is Bitmap bmp)
-                    DrawSliceImage(ctx, bmp, center, radius, midAngle, sliceRad, hasLabel: !string.IsNullOrEmpty(slice.Label));
-
-                // Label centred in the slice; shift inward when an image also occupies the slot
-                if (!string.IsNullOrEmpty(slice.Label))
-                    DrawSliceLabel(ctx, slice.Label, center, radius, midAngle, n, hasImage);
-
-                startAngle = endAngle;
+                double w    = useWeighted ? Math.Max(1.0, active[i].Weight) : 1.0;
+                starts[i]   = ang;
+                ends[i]     = ang + (w / totalWeight) * 2 * Math.PI;
+                isWinner[i] = slices.IndexOf(active[i]) == WinnerIndex;
+                ang = ends[i];
             }
+
+            var rotRad    = RotationAngle * Math.PI / 180.0;
+            var rotMatrix =
+                Matrix.CreateTranslation(-cx, -cy) *
+                Matrix.CreateRotation(rotRad) *
+                Matrix.CreateTranslation(cx, cy);
+
+            // ── Wheel clip (hard outer edge, created in aliased context) ────────
+            // Everything inside this clip is antialiased via the inner PushRenderOptions.
+            // Because the clip itself is pushed before antialiasing is enabled, the clip
+            // boundary stays pixel-hard — essential for clean OBS chroma key capture.
+            var wheelClip = new EllipseGeometry(
+                new Rect(cx - radius, cy - radius, radius * 2, radius * 2));
+
+            using (ctx.PushGeometryClip(wheelClip))
+            using (ctx.PushRenderOptions(new RenderOptions { EdgeMode = EdgeMode.Antialias }))
+            {
+
+            // ── Pass 1: Screen-space images (Static and Upright modes) ────────
+            //
+            // Drawn before the rotation transform so images have no rotation applied.
+            // The clip geometry is in screen space (slice angles + current rotation).
+            //
+            //  Static  (0): image centred on wheel centre — wedge window slides over it.
+            //  Upright (2): image centred on slice's current screen-space midpoint —
+            //               orbits with the slice while staying right-side-up.
+            if (imageMode == 0 || imageMode == 2)
+            {
+                for (int i = 0; i < n; i++)
+                {
+                    if (active[i].LoadedBitmap is not Bitmap bmp) continue;
+
+                    var screenGeo = BuildSliceGeometry(
+                        center, radius,
+                        starts[i] + rotRad, ends[i] + rotRad,
+                        n == 1);
+
+                    Point imageCenter;
+                    if (imageMode == 2)
+                    {
+                        // Upright: centre the image on the slice's midpoint at 50 % radius.
+                        var screenMid = (starts[i] + ends[i]) / 2.0 + rotRad;
+                        imageCenter = new Point(
+                            center.X + radius * 0.5 * Math.Cos(screenMid),
+                            center.Y + radius * 0.5 * Math.Sin(screenMid));
+                    }
+                    else
+                    {
+                        imageCenter = center;
+                    }
+
+                    using (ctx.PushGeometryClip(screenGeo))
+                        DrawCoverImage(ctx, bmp, imageCenter, radius);
+                }
+            }
+
+            // ── Pass 2: Rotating fills, borders, labels (+ images in Rotating mode) ──
+            using (ctx.PushTransform(rotMatrix))
+            {
+                var borderPen = new Pen(Brushes.White, 2);
+                var winnerPen = new Pen(new SolidColorBrush(Color.Parse("#FFD700")), 4);
+
+                for (int i = 0; i < n; i++)
+                {
+                    var slice    = active[i];
+                    var pen      = isWinner[i] ? winnerPen : borderPen;
+                    var geo      = BuildSliceGeometry(center, radius, starts[i], ends[i], n == 1);
+                    var midAngle = (starts[i] + ends[i]) / 2;
+
+                    if (slice.LoadedBitmap is Bitmap bmp)
+                    {
+                        if (imageMode == 1)
+                        {
+                            // Rotating: image is inside the rotation transform — pivots with slice.
+                            using (ctx.PushGeometryClip(geo))
+                                DrawCoverImage(ctx, bmp, center, radius);
+                        }
+                        // Border only; image (from Pass 1 or above) shows through.
+                        ctx.DrawGeometry(Brushes.Transparent, pen, geo);
+                    }
+                    else
+                    {
+                        Color color;
+                        try { color = Color.Parse(slice.ColorHex); }
+                        catch { color = Color.Parse("#808080"); }
+
+                        IBrush fill = isWinner[i]
+                            ? new SolidColorBrush(Lighten(color, 0.2f))
+                            : new SolidColorBrush(color);
+
+                        ctx.DrawGeometry(fill, pen, geo);
+                    }
+
+                }
+            }
+
+            // ── Pass 2.5: Winner/loser highlight overlays (screen-space) ─────────
+            // Applied after fills so the overlay sits on top of both solid colours
+            // and images.  Only drawn when a winner has been decided.
+            int winnerIndex = WinnerIndex;
+            if (winnerIndex >= 0 && (brightenWinner || darkenLosers))
+            {
+                var winnerOverlay = new SolidColorBrush(Color.FromArgb(80,  255, 255, 255));
+                var loserOverlay  = new SolidColorBrush(Color.FromArgb(140,   0,   0,   0));
+
+                for (int i = 0; i < n; i++)
+                {
+                    var geo = BuildSliceGeometry(center, radius,
+                        starts[i] + rotRad, ends[i] + rotRad, n == 1);
+
+                    if (isWinner[i] && brightenWinner)
+                        ctx.DrawGeometry(winnerOverlay, null, geo);
+                    else if (!isWinner[i] && darkenLosers)
+                        ctx.DrawGeometry(loserOverlay, null, geo);
+                }
+            }
+
+            // ── Pass 3: Upright labels (screen-space, orbits with slice) ─────────
+            // Drawn after the rotation transform so labels are never flipped.
+            // Label centre is at 68 % radius along the slice's current screen-space midpoint.
+            if (showLabels)
+            {
+                for (int i = 0; i < n; i++)
+                {
+                    if (string.IsNullOrEmpty(active[i].Label)) continue;
+                    var screenMid = (starts[i] + ends[i]) / 2.0 + rotRad;
+                    var labelCenter = new Point(
+                        center.X + radius * 0.68 * Math.Cos(screenMid),
+                        center.Y + radius * 0.68 * Math.Sin(screenMid));
+                    bool isLoser = !isWinner[i] && winnerIndex >= 0;
+                    DrawSliceLabel(ctx, active[i].Label, labelCenter, n,
+                        labelFont, labelFontSize, labelColorStyle, labelBold,
+                        textMatchesBorder: isLoser && invertLoserText);
+                }
+            }
+
+            } // end wheel clip + antialias push
+
+            // ── Fixed layer — drawn outside the clip with hard edges ──────────
+            // These sit on the chroma key boundary so they must remain pixel-hard.
+            DrawOuterRing(ctx, center, radius);
+            DrawPointer(ctx, center, radius);
+            DrawCenterPin(ctx, center);
         }
 
-        private static void DrawPieSlice(DrawingContext ctx, Point center, double radius,
-            double startAngle, double endAngle, IBrush fill, IPen pen, bool isFullCircle)
+        // ── Geometry helper ───────────────────────────────────────────────────
+
+        private static Geometry BuildSliceGeometry(Point center, double radius,
+            double startAngle, double endAngle, bool isFullCircle)
         {
             if (isFullCircle)
-            {
-                ctx.DrawEllipse(fill, pen, center, radius, radius);
-                return;
-            }
+                return new EllipseGeometry(
+                    new Rect(center.X - radius, center.Y - radius, radius * 2, radius * 2));
 
-            var start = new Point(center.X + radius * Math.Cos(startAngle),
-                                  center.Y + radius * Math.Sin(startAngle));
-            var end   = new Point(center.X + radius * Math.Cos(endAngle),
-                                  center.Y + radius * Math.Sin(endAngle));
+            var start   = new Point(center.X + radius * Math.Cos(startAngle),
+                                    center.Y + radius * Math.Sin(startAngle));
+            var end     = new Point(center.X + radius * Math.Cos(endAngle),
+                                    center.Y + radius * Math.Sin(endAngle));
             var isLarge = (endAngle - startAngle) > Math.PI;
 
             var geo = new StreamGeometry();
@@ -246,52 +449,82 @@ namespace GoldenSpinner.Controls
                 gc.ArcTo(end, new Size(radius, radius), 0, isLarge, SweepDirection.Clockwise);
                 gc.EndFigure(true);
             }
-
-            ctx.DrawGeometry(fill, pen, geo);
+            return geo;
         }
 
-        private static void DrawSliceImage(DrawingContext ctx, Bitmap bmp, Point center,
-            double radius, double midAngle, double sliceRad, bool hasLabel)
+        // ── Cover image ───────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Draws <paramref name="bmp"/> cover-scaled so it fills a <c>2×radius</c> square
+        /// centred on <paramref name="imageCenter"/>.  The caller must push any required
+        /// geometry clip before calling.
+        /// </summary>
+        private static void DrawCoverImage(DrawingContext ctx, Bitmap bmp,
+            Point imageCenter, double radius)
         {
-            // With a label: push image toward the rim so they don't overlap.
-            // Without a label: centre the image in the slice.
-            var imgR = radius * (hasLabel ? 0.72 : 0.5);
-            var ix = center.X + imgR * Math.Cos(midAngle);
-            var iy = center.Y + imgR * Math.Sin(midAngle);
+            var diam  = radius * 2;
+            var imgW  = bmp.PixelSize.Width;
+            var imgH  = bmp.PixelSize.Height;
 
-            // Size the image so it fits within ~¼ of the radius
-            var size = Math.Min(radius * 0.28, 52.0);
-            var dest = new Rect(ix - size / 2, iy - size / 2, size, size);
+            var scale = Math.Max(diam / imgW, diam / imgH);
+            var srcW  = diam / scale;
+            var srcH  = diam / scale;
+            var srcX  = (imgW - srcW) / 2.0;
+            var srcY  = (imgH - srcH) / 2.0;
 
-            ctx.DrawImage(bmp, dest);
+            ctx.DrawImage(bmp,
+                new Rect(srcX, srcY, srcW, srcH),
+                new Rect(imageCenter.X - radius, imageCenter.Y - radius, diam, diam));
         }
 
-        private static void DrawSliceLabel(DrawingContext ctx, string label, Point center,
-            double radius, double midAngle, int sliceCount, bool hasImage)
+        // ── Label ─────────────────────────────────────────────────────────────
+
+        private static void DrawSliceLabel(DrawingContext ctx, string label, Point labelCenter,
+            int sliceCount, string fontFamily, double fontSize, int colorStyle, bool bold,
+            bool textMatchesBorder = false)
         {
-            // Scale font with slice count
-            double fontSize = sliceCount <= 4 ? 14 : sliceCount <= 8 ? 12 : 10;
+            // Font size: manual override or auto-scale by slice count.
+            double size = fontSize > 0
+                ? fontSize
+                : sliceCount <= 4 ? 14 : sliceCount <= 8 ? 12 : 10;
 
-            // Centre the label in the slice. With an image near the rim, pull inward.
-            var textR = radius * (hasImage ? 0.32 : 0.5);
-            var tx = center.X + textR * Math.Cos(midAngle);
-            var ty = center.Y + textR * Math.Sin(midAngle);
+            var weight = bold ? FontWeight.Bold : FontWeight.Normal;
+            var typeface = string.IsNullOrEmpty(fontFamily)
+                ? new Typeface(Typeface.Default.FontFamily, FontStyle.Normal, weight)
+                : new Typeface(fontFamily, FontStyle.Normal, weight);
 
-            // Truncate long labels
+            // colorStyle 0 → white text, black border
+            // colorStyle 1 → black text, white border
+            IBrush borderBrush = colorStyle == 1 ? Brushes.White : Brushes.Black;
+            IBrush textBrush   = textMatchesBorder ? borderBrush
+                               : colorStyle == 1   ? Brushes.Black : Brushes.White;
+
             var display = label.Length > 16 ? label[..15] + "…" : label;
 
-            var ft = new FormattedText(
-                display,
-                CultureInfo.CurrentCulture,
-                FlowDirection.LeftToRight,
-                Typeface.Default,
-                fontSize,
-                Brushes.White);
+            // Build both FormattedText instances once.
+            var borderFt = new FormattedText(display, CultureInfo.CurrentCulture,
+                FlowDirection.LeftToRight, typeface, size, borderBrush);
+            var mainFt = new FormattedText(display, CultureInfo.CurrentCulture,
+                FlowDirection.LeftToRight, typeface, size, textBrush);
 
-            ctx.DrawText(ft, new Point(tx - ft.Width / 2, ty - ft.Height / 2));
+            double bx = labelCenter.X - mainFt.Width  / 2;
+            double by = labelCenter.Y - mainFt.Height / 2;
+
+            // Draw the border: 8 directional offsets at 2 px.
+            const double O = 2.0;
+            ReadOnlySpan<(double dx, double dy)> offsets =
+            [
+                (-O,  0), ( O,  0), ( 0, -O), ( 0,  O),
+                (-O, -O), (-O,  O), ( O, -O), ( O,  O),
+            ];
+            foreach (var (dx, dy) in offsets)
+                ctx.DrawText(borderFt, new Point(bx + dx, by + dy));
+
+            // Draw the main text on top.
+            ctx.DrawText(mainFt, new Point(bx, by));
         }
 
-        // ── Fixed decorations ────────────────────────────────────────────────
+        // ── Fixed decorations ─────────────────────────────────────────────────
 
         private static void DrawOuterRing(DrawingContext ctx, Point center, double radius)
         {
@@ -301,11 +534,10 @@ namespace GoldenSpinner.Controls
 
         private static void DrawPointer(DrawingContext ctx, Point center, double radius)
         {
-            // Downward-pointing triangle sitting just above the wheel rim
-            const double hs = 11.0;  // half-width of base
-            const double h = 20.0;   // height
+            const double hs = 11.0;
+            const double h  = 20.0;
 
-            var tipY = center.Y - radius + 2;
+            var tipY  = center.Y - radius + 2;
             var baseY = tipY - h;
 
             var geo = new StreamGeometry();

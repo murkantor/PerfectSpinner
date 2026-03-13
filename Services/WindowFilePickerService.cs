@@ -34,10 +34,22 @@ namespace GoldenSpinner.Services
             MimeTypes = ["audio/wav", "audio/mpeg"]
         };
 
-        private static readonly FilePickerFileType LayoutFilter = new("Wheel Layout")
+        private static readonly FilePickerFileType LayoutJsonFilter = new("Wheel Layout — JSON")
         {
             Patterns = ["*.json"],
             MimeTypes = ["application/json"]
+        };
+
+        private static readonly FilePickerFileType LayoutZipFilter = new("Wheel Layout — ZIP bundle")
+        {
+            Patterns = ["*.zip"],
+            MimeTypes = ["application/zip"]
+        };
+
+        private static readonly FilePickerFileType AnyLayoutFilter = new("Wheel Layout files")
+        {
+            Patterns = ["*.json", "*.zip"],
+            MimeTypes = ["application/json", "application/zip"]
         };
 
         // ── IFilePickerService ────────────────────────────────────────────────
@@ -49,7 +61,7 @@ namespace GoldenSpinner.Services
             PickOpenFileAsync("Select Sound", [AudioFilter]);
 
         public Task<string?> OpenLayoutFileAsync() =>
-            PickOpenFileAsync("Load Wheel Layout", [LayoutFilter]);
+            PickOpenFileAsync("Load Wheel Layout", [AnyLayoutFilter, LayoutJsonFilter, LayoutZipFilter]);
 
         public async Task<string?> SaveLayoutFileAsync(string defaultName)
         {
@@ -59,9 +71,9 @@ namespace GoldenSpinner.Services
             var file = await provider.SaveFilePickerAsync(new FilePickerSaveOptions
             {
                 Title = "Save Wheel Layout",
-                DefaultExtension = "json",
+                DefaultExtension = "zip",
                 SuggestedFileName = defaultName,
-                FileTypeChoices = [LayoutFilter]
+                FileTypeChoices = [LayoutZipFilter, LayoutJsonFilter]
             });
 
             return file?.TryGetLocalPath();

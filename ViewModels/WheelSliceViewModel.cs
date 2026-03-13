@@ -23,6 +23,11 @@ namespace GoldenSpinner.ViewModels
         [ObservableProperty] private string? _soundPath;
 
         /// <summary>
+        /// When non-empty, replaces the wheel's WinnerMessageTemplate for this slice.
+        /// </summary>
+        [ObservableProperty] private string? _winnerLabel;
+
+        /// <summary>
         /// Bitmap loaded from <see cref="ImagePath"/>; null if no image is assigned
         /// or the file could not be read.  Stored separately so it can be disposed.
         /// </summary>
@@ -50,11 +55,12 @@ namespace GoldenSpinner.ViewModels
         /// <summary>Constructs a ViewModel from a deserialized model and loads the bitmap.</summary>
         public WheelSliceViewModel(WheelSlice model)
         {
-            _label    = model.Label;
-            _colorHex = model.ColorHex;
-            _soundPath = model.SoundPath;
-            _weight   = Math.Max(0.0, model.Weight);
-            _isActive = model.IsActive;
+            _label       = model.Label;
+            _colorHex    = model.ColorHex;
+            _soundPath   = model.SoundPath;
+            _winnerLabel = model.WinnerLabel;
+            _weight      = Math.Max(0.0, model.Weight);
+            _isActive    = model.IsActive;
             // Use the property setter so the bitmap is loaded immediately.
             ImagePath = model.ImagePath;
         }
@@ -84,13 +90,14 @@ namespace GoldenSpinner.ViewModels
         /// <summary>Creates a serialisable <see cref="WheelSlice"/> from the current state.</summary>
         public WheelSlice ToModel() => new()
         {
-            Id        = Id,
-            Label     = Label,
-            ColorHex  = ColorHex,
-            ImagePath = ImagePath,
-            SoundPath = SoundPath,
-            Weight    = Weight,
-            IsActive  = IsActive
+            Id          = Id,
+            Label       = Label,
+            ColorHex    = ColorHex,
+            ImagePath   = ImagePath,
+            SoundPath   = SoundPath,
+            WinnerLabel = string.IsNullOrWhiteSpace(WinnerLabel) ? null : WinnerLabel,
+            Weight      = Weight,
+            IsActive    = IsActive
         };
     }
 }

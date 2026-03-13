@@ -27,7 +27,8 @@ namespace GoldenSpinner.Views
             var pickerService = new WindowFilePickerService(this);
             var layoutService = new LayoutService();
             var audioService  = new AudioService();
-            var vm = new MainWindowViewModel(pickerService, layoutService, audioService);
+            var logService    = new LogService();
+            var vm = new MainWindowViewModel(pickerService, layoutService, audioService, logService);
 
             DataContext = vm;
 
