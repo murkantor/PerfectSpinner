@@ -1,3 +1,4 @@
+using System;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
@@ -19,8 +20,13 @@ namespace GoldenSpinner.Views
     {
         private readonly SpinnerWindow _spinnerWindow;
 
-        // Guard against the mutual-activation handlers triggering each other.
-        private bool _activatingPair;
+        // Timestamp guard for mutual activation.
+        // A bool flag resets too early (Activate() is async; the other window's
+        // Activated event fires after the flag is already cleared, so the ping-pong
+        // continues indefinitely and starves all input).  A 200 ms cooldown breaks
+        // the cycle: both Activated events in the same user click happen within a
+        // few milliseconds of each other, well inside the window.
+        private long _lastActivationMs;
 
         public MainWindow()
         {
@@ -43,22 +49,20 @@ namespace GoldenSpinner.Views
             _spinnerWindow.Closed += (_, _) => Close();
 
             // ── Mutual activation — clicking either window raises both ─────────
-            // The _activatingPair guard prevents the two handlers calling each
-            // other in an infinite loop.
             Activated += (_, _) =>
             {
-                if (_activatingPair) return;
-                _activatingPair = true;
+                var now = Environment.TickCount64;
+                if (now - _lastActivationMs < 200) return;
+                _lastActivationMs = now;
                 _spinnerWindow.Activate();
-                _activatingPair = false;
             };
 
             _spinnerWindow.Activated += (_, _) =>
             {
-                if (_activatingPair) return;
-                _activatingPair = true;
+                var now = Environment.TickCount64;
+                if (now - _lastActivationMs < 200) return;
+                _lastActivationMs = now;
                 Activate();
-                _activatingPair = false;
             };
 
             // ── Side-by-side centred layout on startup ────────────────────────
