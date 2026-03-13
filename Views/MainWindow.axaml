@@ -34,26 +34,42 @@
                 <Separator />
 
                 <!-- ── Spin ──────────────────────────────────────────── -->
-                <Button Content="🎡  SPIN!"
-                        Command="{Binding SpinWheelCommand}"
-                        HorizontalAlignment="Stretch"
-                        FontSize="18" FontWeight="Bold"
-                        Padding="0,14" />
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                    <Button Grid.Column="0"
+                            Content="🎡  SPIN!"
+                            Command="{Binding SpinWheelCommand}"
+                            HorizontalAlignment="Stretch"
+                            FontSize="18" FontWeight="Bold"
+                            Padding="0,14" />
+                    <Button Grid.Column="1"
+                            Content="↺"
+                            Command="{Binding ResetWheelCommand}"
+                            ToolTip.Tip="Reset wheel to zero"
+                            FontSize="18"
+                            Padding="12,14" />
+                </Grid>
 
-                <StackPanel Orientation="Horizontal" Spacing="6">
-                    <TextBlock Text="Duration:" VerticalAlignment="Center" />
-                    <NumericUpDown Value="{Binding SpinDurationSeconds}"
+                <!-- Duration and Inertia aligned in a two-column grid -->
+                <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto"
+                      RowSpacing="6">
+
+                    <TextBlock Grid.Row="0" Grid.Column="0"
+                               Text="Duration (s):"
+                               VerticalAlignment="Center" Margin="0,0,10,0" />
+                    <NumericUpDown Grid.Row="0" Grid.Column="1"
+                                  Value="{Binding SpinDurationSeconds}"
                                   Minimum="1" Maximum="30" Increment="0.5"
-                                  FormatString="F1" Width="100" />
-                    <TextBlock Text="s" VerticalAlignment="Center" />
-                </StackPanel>
+                                  FormatString="F1" />
 
-                <StackPanel Orientation="Horizontal" Spacing="6">
-                    <TextBlock Text="Inertia:" VerticalAlignment="Center" />
-                    <NumericUpDown Value="{Binding Inertia}"
+                    <TextBlock Grid.Row="1" Grid.Column="0"
+                               Text="Inertia (1–10):"
+                               VerticalAlignment="Center" Margin="0,0,10,0" />
+                    <NumericUpDown Grid.Row="1" Grid.Column="1"
+                                  Value="{Binding Inertia}"
                                   Minimum="1" Maximum="10" Increment="1"
-                                  FormatString="F0" Width="100" />
-                </StackPanel>
+                                  FormatString="F0" />
+
+                </Grid>
 
                 <Separator />
 

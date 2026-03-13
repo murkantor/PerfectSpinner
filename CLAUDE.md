@@ -91,10 +91,14 @@ The app runs as **two separate windows** that share one `MainWindowViewModel`:
 
 **Window lifecycle:**
 - `MainWindow` is the app's lifetime window (`desktop.MainWindow`). Closing it exits the app.
-- `SpinnerWindow`'s X button **hides** it (does not destroy it). The Settings window's
-  "Show Spinner Window" button re-shows it via `_spinnerWindow.Show()`.
-- On app exit, `MainWindow.Closing` calls `_spinnerWindow.CloseForReal()`, which sets a
-  `_forceClose` flag to bypass the hide-instead-of-close guard.
+- Closing **either** window closes both. `MainWindow.Closing` calls `_spinnerWindow.Close()`;
+  `_spinnerWindow.Closed` (past-tense, fires after the window is gone) calls `Close()` on
+  `MainWindow`. Using `Closed` rather than `Closing` avoids re-entrancy.
+- On startup both windows are positioned **side by side, centred on the primary display**
+  in the `Opened` event (deferred because `Screens.Primary` is only queryable after the
+  window is visible). Logical sizes are converted to physical pixels via `screen.Scaling`.
+- The "Show Spinner Window" button in Settings calls `Activate()` (bring to front) if the
+  window is already visible, or `Show()` if it has been minimised.
 
 ## Architecture diagram
 
@@ -311,8 +315,9 @@ All application logic lives here; the view has no logic.
 | `SelectedSlice` | `WheelSliceViewModel?` | Currently selected slice in the editor panel |
 | `CurrentRotation` | `double` | Current wheel rotation in degrees. Drives the `SpinnerWheelControl` |
 | `WinnerIndex` | `int` | Index of the winning slice (-1 = no winner yet). Used by the control to highlight the winner |
-| `WinnerMessage` | `string` | Banner text shown below the wheel after spinning |
-| `SpinDurationSeconds` | `decimal` | Bound to the `NumericUpDown` widget |
+| `WinnerMessage` | `string` | Banner text shown on the SpinnerWindow after spinning (not shown in Settings) |
+| `SpinDurationSeconds` | `decimal` | Bound to the Duration `NumericUpDown` in Settings |
+| `Inertia` | `int` | 1–10. Controls extra full rotations: `level × 2` min + `rng.Next(level+1)` random bonus. Level 1 = 2–3 spins; level 10 = 20–30 spins |
 
 `HasSelectedSlice` is a plain computed property (not `[ObservableProperty]`) that returns
 `SelectedSlice != null`. It is refreshed by `[NotifyPropertyChangedFor(nameof(HasSelectedSlice))]`
@@ -350,6 +355,7 @@ manual wiring.
 | `RemoveSound()` | `RemoveSoundCommand` | `HasSelectionSoundPath()` | Nulls `SelectedSlice.SoundPath` |
 | `SaveLayoutAsync()` | `SaveLayoutCommand` | always enabled | Opens save dialog, calls `LayoutService.SaveAsync` |
 | `LoadLayoutAsync()` | `LoadLayoutCommand` | always enabled | Opens load dialog, rebuilds `Slices` from model |
+| `ResetWheel()` | `ResetWheelCommand` | always enabled | Sets `CurrentRotation = 0`, `WinnerIndex = -1`, clears `WinnerMessage` |
 
 **CommunityToolkit naming rules:**
 - Method `SpinWheelAsync` → command `SpinWheelCommand` (strips `Async` suffix, appends `Command`)
@@ -367,7 +373,7 @@ The `SpinWheelAsync` method is an `async Task` that:
 4. `await _spinTcs.Task` — suspends `SpinWheelAsync` here. Because it is an `AsyncRelayCommand`,
    the SPIN button stays disabled until the task resumes.
 5. Each timer tick calls `OnAnimationTick`, which advances `CurrentRotation` along a
-   **cubic ease-out curve**: `eased = 1 - (1 - t)³` where `t` is normalised elapsed time [0, 1].
+   **two-phase easing curve** (see below) where `t` is normalised elapsed time [0, 1].
 6. When `t >= 1.0`, the timer stops and calls `_spinTcs.TrySetResult()`, which unblocks step 4.
 7. After the await resumes: sets `WinnerIndex`, `WinnerMessage`, and plays the winner's sound.
 
@@ -388,9 +394,22 @@ To make the wheel stop so that the **centre** of winner slice `w` is at the poin
 targetMod = (360 - (w + 0.5) × sliceDeg) mod 360
 ```
 
-A random wobble of ±30% of one slice is added for visual variety, plus 5–9 extra full
-rotations. The wobble keeps the result looking natural rather than always stopping
-dead-centre on the winner slice.
+A random wobble of ±30% of one slice is added for visual variety. The number of extra
+full rotations is driven by the `Inertia` property: `level × 2 + rng.Next(level + 1)`
+so higher inertia = more spins, with randomisation preventing the wheel from always
+landing in the same spot.
+
+#### Two-phase animation easing
+
+The easing curve in `OnAnimationTick` is split at `t = 0.67`:
+
+| Phase | Time span | Rotation covered | Curve |
+|-------|-----------|-----------------|-------|
+| 1 | t ∈ [0.00, 0.67] | 82% of total | Quadratic ease-in-out — accelerates then cruises |
+| 2 | t ∈ [0.67, 1.00] | 18% of total | Quintic ease-out `1-(1-t₂)⁵` — steep dramatic slowdown |
+
+The dramatic quintic brake at the end gives the "will it land here?" tension that is
+especially visible at long durations and high inertia settings.
 
 #### Palette colours
 
@@ -415,18 +434,21 @@ Window (760×640, title "SpinnerWheel — Settings")
 └── Grid (2 columns: 320px fixed, *)
     ├── [Col 0] ScrollViewer > StackPanel  — Controls
     │     SpinnerWheel header
-    │     SPIN button
-    │     Duration NumericUpDown
-    │     Last Winner display (gold text)
+    │     Grid: [SPIN! button | ↺ Reset button]
+    │     Grid: Duration (s) label | NumericUpDown (stretches to fill)
+    │           Inertia (1–10) label | NumericUpDown (stretches to fill)
     │     Chroma Key: TextBox + live swatch Border
     │     "Show Spinner Window" button  (Click → code-behind handler)
     │     Save / Load Layout buttons
-    └── [Col 1] Border  — Slice editor (identical to original)
+    └── [Col 1] Border  — Slice editor
           Grid (3 rows: Auto, *, Auto)
           ├── Toolbar: + − ▲ ▼ buttons
           ├── ListBox: slices (DataTemplate x:DataType=WheelSliceViewModel)
           └── ScrollViewer: properties editor (IsVisible=HasSelectedSlice)
 ```
+
+Note: the "Last Winner" display was removed from the Settings window. The winner banner
+is only shown on the `SpinnerWindow` (the OBS capture window).
 
 #### Key bindings unique to this window
 
@@ -456,13 +478,22 @@ public MainWindow()
     _spinnerWindow = new SpinnerWindow(vm);   // share the same ViewModel instance
     _spinnerWindow.Show();
 
-    Closing += (_, _) => _spinnerWindow.CloseForReal();   // force-close on app exit
+    // Bidirectional close: closing either window closes both.
+    Closing               += (_, _) => _spinnerWindow.Close();
+    _spinnerWindow.Closed += (_, _) => Close();   // Closed (past) avoids re-entrancy
+
+    // Position side by side on primary display once the window is live.
+    Opened += (_, _) => PositionWindowsSideBySide();
 }
 ```
 
+`PositionWindowsSideBySide()` — called from `Opened`. Reads `Screens.Primary.WorkingArea`
+(physical pixels), converts logical window sizes via `screen.Scaling`, then sets both
+windows' `Position` so the pair is horizontally and vertically centred on screen.
+
 `OnShowSpinnerWindowClicked` — event handler for the "Show Spinner Window" button.
 Calls `Activate()` if the window is already visible (bring to front), or `Show()` if
-it is hidden.
+it has been minimised.
 
 ---
 
@@ -510,11 +541,9 @@ Two constructors (chained):
 
 ```csharp
 // Parameterless — required by Avalonia XAML loader and IDE design tools.
-// Also sets up the hide-instead-of-close Closing handler.
 public SpinnerWindow()
 {
     InitializeComponent();
-    Closing += (_, e) => { if (!_forceClose) { e.Cancel = true; Hide(); } };
 }
 
 // Runtime constructor — shares the ViewModel.
@@ -524,8 +553,8 @@ public SpinnerWindow(MainWindowViewModel vm) : this()
 }
 ```
 
-`CloseForReal()` — sets `_forceClose = true` then calls `Close()`. Called only by
-`MainWindow.Closing` to ensure the window actually exits when the app does.
+There is no longer a hide-instead-of-close guard or `CloseForReal()`. Closing the
+`SpinnerWindow` is handled symmetrically from `MainWindow` — both windows close together.
 
 **Why two constructors?** Avalonia's build system warns (`AVLN3001`) if a Window has no
 public parameterless constructor, because the XAML loader cannot instantiate it for
@@ -749,11 +778,11 @@ next to each slice name.
 
 ### Change the spin animation curve
 
-Edit `OnAnimationTick` in `MainWindowViewModel.cs`. The current easing:
-```csharp
-var eased = 1.0 - Math.Pow(1.0 - t, 3.0);  // cubic ease-out
-```
-Replace with any other easing. `t` is in [0, 1] (0 = animation start, 1 = animation end).
+Edit `OnAnimationTick` in `MainWindowViewModel.cs`. The current curve is two-phase
+(quadratic ease-in-out for the fast part, quintic ease-out for the dramatic finale).
+The split point (`splitT = 0.67`) and the progress split (`splitProgress = 0.82`) can
+be tuned to shift more or less rotation into the dramatic slowdown phase.
+`t` is in [0, 1] (0 = animation start, 1 = animation end).
 
 ### Change how slices are drawn
 

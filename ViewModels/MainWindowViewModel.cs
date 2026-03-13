@@ -174,6 +174,14 @@ namespace GoldenSpinner.ViewModels
         }
 
         [RelayCommand]
+        private void ResetWheel()
+        {
+            CurrentRotation = 0;
+            WinnerIndex = -1;
+            WinnerMessage = string.Empty;
+        }
+
+        [RelayCommand]
         private void AddSlice()
         {
             var color = PaletteColors[Slices.Count % PaletteColors.Length];
@@ -303,8 +311,32 @@ namespace GoldenSpinner.ViewModels
             var elapsed = DateTimeOffset.UtcNow - _animStart;
             var t = Math.Min(elapsed.TotalSeconds / _animDuration.TotalSeconds, 1.0);
 
-            // Cubic ease-out: decelerate to a smooth stop
-            var eased = 1.0 - Math.Pow(1.0 - t, 3.0);
+            // Two-phase easing for dramatic finale:
+            //   Phase 1 (t ∈ [0, 0.67]): quadratic ease-in-out — wheel accelerates
+            //     and cruises, covering 82 % of the total rotation.
+            //   Phase 2 (t ∈ [0.67, 1.0]): quintic ease-out — steep deceleration
+            //     over the last 33 % of time for the remaining 18 % of rotation.
+            const double splitT        = 0.67;
+            const double splitProgress = 0.82;
+
+            double eased;
+            if (t < splitT)
+            {
+                var t1 = t / splitT;
+                // Quadratic ease-in-out
+                var phase1 = t1 < 0.5
+                    ? 2.0 * t1 * t1
+                    : 1.0 - Math.Pow(-2.0 * t1 + 2.0, 2.0) / 2.0;
+                eased = phase1 * splitProgress;
+            }
+            else
+            {
+                var t2 = (t - splitT) / (1.0 - splitT);
+                // Quintic ease-out — very steep deceleration
+                var phase2 = 1.0 - Math.Pow(1.0 - t2, 5.0);
+                eased = splitProgress + phase2 * (1.0 - splitProgress);
+            }
+
             CurrentRotation = _animStartAngle + (_animTargetAngle - _animStartAngle) * eased;
 
             if (t >= 1.0)
