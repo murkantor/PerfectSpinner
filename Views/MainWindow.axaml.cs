@@ -1,7 +1,6 @@
 using System;
 using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Interactivity;
 using GoldenSpinner.Services;
 using GoldenSpinner.ViewModels;
 
@@ -97,18 +96,5 @@ namespace GoldenSpinner.Views
             _spinnerWindow.Position = new PixelPoint(startX + settingsW + gap, centerY - spinnerH  / 2);
         }
 
-        // ── Event handlers (view-specific, not suitable for ViewModel) ────────
-
-        /// <summary>
-        /// Attached to the "Show Spinner Window" button's Click event.
-        /// Brings the SpinnerWindow to the front, or activates it if already visible.
-        /// </summary>
-        private void OnShowSpinnerWindowClicked(object? sender, RoutedEventArgs e)
-        {
-            if (_spinnerWindow.IsVisible)
-                _spinnerWindow.Activate();
-            else
-                _spinnerWindow.Show();
-        }
     }
 }

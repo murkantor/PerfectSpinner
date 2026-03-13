@@ -102,18 +102,6 @@
 
                 <Separator />
 
-                <!-- ── Spinner window ──────────────────────────────────── -->
-                <TextBlock Text="Capture Window" FontWeight="SemiBold" />
-                <TextBlock Text="Use 'Window Capture' in OBS and select the Spinner window."
-                           FontSize="11" TextWrapping="Wrap"
-                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
-                <Button Content="📺  Show Spinner Window"
-                        Click="OnShowSpinnerWindowClicked"
-                        HorizontalAlignment="Stretch"
-                        Padding="0,8" />
-
-                <Separator />
-
                 <!-- ── Layout I/O ──────────────────────────────────────── -->
                 <TextBlock Text="Layout" FontWeight="SemiBold" />
                 <StackPanel Orientation="Horizontal" Spacing="8">
