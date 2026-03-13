@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cd \"/c/Users/tidbu/source/repos/GoldenSpinner\" && dotnet build 2>&1 | tail -60)",
+      "Bash(cd \"/c/Users/tidbu/source/repos/GoldenSpinner\" && dotnet build -c Release 2>&1 | grep -E \"^\\(Build|Error|Warning|error|warning\\)\" | head -30)",
+      "Bash(cd \"/c/Users/tidbu/source/repos/GoldenSpinner\" && dotnet build -c Release 2>&1 | grep -v \"^  \" | grep -v \"^$\")",
+      "Bash(cd \"/c/Users/tidbu/source/repos/GoldenSpinner\" && dotnet build -c Release --no-incremental 2>&1 | tail -5)",
+      "Bash(cd \"/c/Users/tidbu/source/repos/GoldenSpinner\" && dotnet build -c Release --no-incremental 2>&1 | grep -v \"^  \" | grep -v \"^$\")",
+      "Bash(cd \"C:\\\\Users\\\\tidbu\\\\source\\\\repos\\\\GoldenSpinner\" && dotnet build -c Release 2>&1 | tail -20)",
+      "Bash(cd \"C:\\\\Users\\\\tidbu\\\\source\\\\repos\\\\GoldenSpinner\" && dotnet build -c Release 2>&1 | grep -E \"^\\(Build|error CS|warning CS|warning AVLN|warning MVVM\\)\" | head -20)",
+      "Bash(cd \"C:\\\\Users\\\\tidbu\\\\source\\\\repos\\\\GoldenSpinner\" && dotnet build -c Release 2>&1 | grep -E \"\\(error CS|warning CS|warning AVLN|warning MVVM\\)\" | head -20)"
+    ]
+  }
+}

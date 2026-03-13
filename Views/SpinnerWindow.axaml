@@ -1,0 +1,50 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:GoldenSpinner.ViewModels"
+        xmlns:controls="using:GoldenSpinner.Controls"
+        x:Class="GoldenSpinner.Views.SpinnerWindow"
+        x:DataType="vm:MainWindowViewModel"
+        Title="SpinnerWheel — OBS Capture"
+        Width="620" Height="660"
+        MinWidth="300" MinHeight="300"
+        Background="{Binding ChromaKeyColor, Converter={StaticResource HexColorToBrush}}">
+
+    <!--
+        ════════════════════════════════════════════════════════════════
+        OBS CAPTURE WINDOW
+        ════════════════════════════════════════════════════════════════
+        • Add this window as a "Window Capture" source in OBS.
+        • Apply a Chroma Key filter using the colour set in Settings.
+        • Only the wheel circle (and winner banner) will remain visible
+          after keying — the background corners are transparent to the
+          solid chromakey colour.
+        ════════════════════════════════════════════════════════════════
+    -->
+
+    <Grid>
+
+        <!-- Wheel fills the entire window; Viewbox scales it uniformly -->
+        <Viewbox Stretch="Uniform">
+            <controls:SpinnerWheelControl
+                Width="600" Height="600"
+                Slices="{Binding Slices}"
+                RotationAngle="{Binding CurrentRotation}"
+                WinnerIndex="{Binding WinnerIndex}" />
+        </Viewbox>
+
+        <!-- Winner banner — overlaid at the bottom, hidden when empty -->
+        <Border VerticalAlignment="Bottom"
+                HorizontalAlignment="Center"
+                Background="#CC000000"
+                CornerRadius="8"
+                Padding="24,10"
+                Margin="0,0,0,20"
+                IsVisible="{Binding WinnerMessage,
+                            Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+            <TextBlock Text="{Binding WinnerMessage}"
+                       FontSize="30" FontWeight="Bold"
+                       Foreground="White" />
+        </Border>
+
+    </Grid>
+</Window>
