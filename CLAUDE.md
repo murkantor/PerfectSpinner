@@ -68,8 +68,8 @@ The app runs as **two separate windows** that share one `MainWindowViewModel`:
 │  Title: "SpinnerWheel —      │     │  Title: "SpinnerWheel —          │
 │          Settings"           │     │          OBS Capture"            │
 │  Contains:                   │     │  Contains:                       │
-│  • SPIN button + duration    │     │  • SpinnerWheelControl (full)    │
-│  • Last winner display       │     │  • Winner banner overlay         │
+│  • SPIN + ↺ Reset buttons    │     │  • SpinnerWheelControl (full)    │
+│  • Speed + Friction controls │     │  • Winner banner overlay         │
 │  • Chroma key colour picker  │     │  • Background = ChromaKeyColor   │
 │  • Show Spinner Window btn   │     │                                  │
 │  • Save / Load layout        │     │  In OBS: Window Capture source   │
@@ -99,6 +99,9 @@ The app runs as **two separate windows** that share one `MainWindowViewModel`:
   window is visible). Logical sizes are converted to physical pixels via `screen.Scaling`.
 - The "Show Spinner Window" button in Settings calls `Activate()` (bring to front) if the
   window is already visible, or `Show()` if it has been minimised.
+- **Mutual activation** — clicking or focusing either window brings both to the front.
+  Wired via `Activated` events on both windows in `MainWindow.axaml.cs`. A
+  `_activatingPair` bool guard prevents the two handlers triggering each other in a loop.
 
 ## Architecture diagram
 
@@ -316,8 +319,8 @@ All application logic lives here; the view has no logic.
 | `CurrentRotation` | `double` | Current wheel rotation in degrees. Drives the `SpinnerWheelControl` |
 | `WinnerIndex` | `int` | Index of the winning slice (-1 = no winner yet). Used by the control to highlight the winner |
 | `WinnerMessage` | `string` | Banner text shown on the SpinnerWindow after spinning (not shown in Settings) |
-| `SpinDurationSeconds` | `decimal` | Bound to the Duration `NumericUpDown` in Settings |
-| `Inertia` | `int` | 1–10. Controls extra full rotations: `level × 2` min + `rng.Next(level+1)` random bonus. Level 1 = 2–3 spins; level 10 = 20–30 spins |
+| `SpinDurationSeconds` | `decimal` | Labelled "Speed" in the UI. Controls peak angular velocity: `Speed × 180 °/s`. Higher = faster wheel and longer free-spin coast. Property name kept for save-file compatibility |
+| `Friction` | `int` | 1–10. Free-spin friction rate. 1 = near-frictionless long coast; 10 = stops quickly. Decay rate = `0.20 + (Friction-1) × 0.28` per second |
 
 `HasSelectedSlice` is a plain computed property (not `[ObservableProperty]`) that returns
 `SelectedSlice != null`. It is refreshed by `[NotifyPropertyChangedFor(nameof(HasSelectedSlice))]`
@@ -355,61 +358,62 @@ manual wiring.
 | `RemoveSound()` | `RemoveSoundCommand` | `HasSelectionSoundPath()` | Nulls `SelectedSlice.SoundPath` |
 | `SaveLayoutAsync()` | `SaveLayoutCommand` | always enabled | Opens save dialog, calls `LayoutService.SaveAsync` |
 | `LoadLayoutAsync()` | `LoadLayoutCommand` | always enabled | Opens load dialog, rebuilds `Slices` from model |
-| `ResetWheel()` | `ResetWheelCommand` | always enabled | Sets `CurrentRotation = 0`, `WinnerIndex = -1`, clears `WinnerMessage` |
+| `ResetWheel()` | `ResetWheelCommand` | always enabled | Stops any in-progress animation, sets `CurrentRotation = 0`, clears winner state |
 
 **CommunityToolkit naming rules:**
 - Method `SpinWheelAsync` → command `SpinWheelCommand` (strips `Async` suffix, appends `Command`)
 - Method `AddSlice` → command `AddSliceCommand`
 - Method `AssignImageAsync` → command `AssignImageCommand`
 
-#### Spin animation deep dive
+#### Spin animation deep dive — physics model
 
-The spin runs on the **UI thread** via `DispatcherTimer` at `DispatcherPriority.Render`.
-The `SpinWheelAsync` method is an `async Task` that:
+The spin is **velocity-based physics** rather than a fixed-target easing curve.
+`SpinWheelAsync` sets up phase boundaries and starts a `DispatcherTimer`; each tick
+advances `CurrentRotation` by `_currentVelocity × dt`. The winner is read from
+`CurrentRotation` when the wheel physically stops — it is **not** pre-determined.
 
-1. Picks a random winner index.
-2. Calculates `_animTargetAngle` using the rotation math (see Coordinate System section below).
-3. Creates a `TaskCompletionSource _spinTcs` and starts the timer.
-4. `await _spinTcs.Task` — suspends `SpinWheelAsync` here. Because it is an `AsyncRelayCommand`,
-   the SPIN button stays disabled until the task resumes.
-5. Each timer tick calls `OnAnimationTick`, which advances `CurrentRotation` along a
-   **two-phase easing curve** (see below) where `t` is normalised elapsed time [0, 1].
-6. When `t >= 1.0`, the timer stops and calls `_spinTcs.TrySetResult()`, which unblocks step 4.
-7. After the await resumes: sets `WinnerIndex`, `WinnerMessage`, and plays the winner's sound.
+`SpinWheelAsync` flow:
+1. Sets physics parameters from `SpinDurationSeconds` (Speed) and `Friction`.
+2. Creates `_spinTcs` and starts the `DispatcherTimer` (~60 fps).
+3. `await _spinTcs.Task` — SPIN button stays disabled for the entire physics simulation.
+4. After await: reads `CurrentRotation`, calculates which slice is under the pointer,
+   sets `WinnerIndex` / `WinnerMessage`, plays winner sound.
+
+#### Five animation phases
+
+All time boundaries are in seconds from `_animStart`. `totalDuration = SpinDurationSeconds`.
+
+| Phase | Time window | Velocity behaviour |
+|-------|-------------|-------------------|
+| 1 Wind-up | `0 → _windUpDuration` (random 2–5 % of total) | Ease-in **backwards** to `−_windUpSpeed` (60 °/s) — the "grab and pull" feel |
+| 2 Acceleration | `_windUpDuration → _accelEndTime` (10 % of total) | `Lerp(−windUpSpeed, peakVelocity, t²)` — ease-in from reverse through zero to peak |
+| 3 Cruise | `_accelEndTime → _fullSpeedEndTime` (10–80 %) | Constant `_peakVelocity` |
+| 4 Engine off | `_fullSpeedEndTime → _halfSpeedEndTime` (80–100 %) | Linear drop from `peakVelocity` to `peakVelocity / 2` |
+| 5 Free spin | `> _halfSpeedEndTime` until stop | Exponential friction decay; stops when velocity < 0.5 °/s |
+
+`_peakVelocity = SpinDurationSeconds × 180 °/s`
+
+Friction decay per tick: `velocity *= (1 − frictionRate × dt)` where
+`frictionRate = 0.20 + (Friction − 1) × 0.28`.
+
+`_spinCancelled` flag: if `ResetWheel()` is called mid-spin it sets this flag and calls
+`_spinTcs.TrySetResult()`. The `SpinWheelAsync` continuation checks the flag and returns
+early without setting a winner.
 
 #### Coordinate system and winner math
 
-Slices are drawn starting at **-90° (12 o'clock)** going **clockwise**. The pointer is
-fixed at the top (screen -90°). The canvas is rotated clockwise by `CurrentRotation` degrees.
+Slices are drawn starting at **−90° (12 o'clock)** going **clockwise**. The pointer is
+fixed at the top. The canvas is rotated clockwise by `CurrentRotation` degrees.
 
-After a spin of R degrees, the pointer sees the canvas angle:
+After the wheel stops at angle R, the pointer reads:
 ```
-pointerAngle = (360 - R mod 360) mod 360
-```
-
-Slice `i` occupies canvas angles `[i × sliceDeg, (i+1) × sliceDeg)`.
-
-To make the wheel stop so that the **centre** of winner slice `w` is at the pointer:
-```
-targetMod = (360 - (w + 0.5) × sliceDeg) mod 360
+pointerAngle = ((360 − R mod 360) mod 360 + 360) mod 360
+winnerIndex  = (int)(pointerAngle / sliceDeg) mod n
 ```
 
-A random wobble of ±30% of one slice is added for visual variety. The number of extra
-full rotations is driven by the `Inertia` property: `level × 2 + rng.Next(level + 1)`
-so higher inertia = more spins, with randomisation preventing the wheel from always
-landing in the same spot.
-
-#### Two-phase animation easing
-
-The easing curve in `OnAnimationTick` is split at `t = 0.67`:
-
-| Phase | Time span | Rotation covered | Curve |
-|-------|-----------|-----------------|-------|
-| 1 | t ∈ [0.00, 0.67] | 82% of total | Quadratic ease-in-out — accelerates then cruises |
-| 2 | t ∈ [0.67, 1.00] | 18% of total | Quintic ease-out `1-(1-t₂)⁵` — steep dramatic slowdown |
-
-The dramatic quintic brake at the end gives the "will it land here?" tension that is
-especially visible at long durations and high inertia settings.
+Randomness comes from the variable wind-up fraction (2–5 % of total duration), which
+shifts the phase timing on every spin so the wheel never coasts from the same starting
+angle twice.
 
 #### Palette colours
 
@@ -490,6 +494,10 @@ public MainWindow()
 `PositionWindowsSideBySide()` — called from `Opened`. Reads `Screens.Primary.WorkingArea`
 (physical pixels), converts logical window sizes via `screen.Scaling`, then sets both
 windows' `Position` so the pair is horizontally and vertically centred on screen.
+
+**Mutual activation** — both windows' `Activated` events are wired so clicking either
+window brings both to the front. A `_activatingPair` bool guard prevents the two
+handlers calling each other in an infinite loop.
 
 `OnShowSpinnerWindowClicked` — event handler for the "Show Spinner Window" button.
 Calls `Activate()` if the window is already visible (bring to front), or `Show()` if
@@ -776,13 +784,20 @@ next to each slice name.
 5. If the command's enabled state depends on `SelectedSlice`, add
    `[NotifyCanExecuteChangedFor(nameof(MyNewCommand))]` to the `_selectedSlice` field.
 
-### Change the spin animation curve
+### Change the spin animation feel
 
-Edit `OnAnimationTick` in `MainWindowViewModel.cs`. The current curve is two-phase
-(quadratic ease-in-out for the fast part, quintic ease-out for the dramatic finale).
-The split point (`splitT = 0.67`) and the progress split (`splitProgress = 0.82`) can
-be tuned to shift more or less rotation into the dramatic slowdown phase.
-`t` is in [0, 1] (0 = animation start, 1 = animation end).
+The spin is physics-based. Key tuning points in `MainWindowViewModel.cs`:
+
+- **Wind-up speed** — `_windUpSpeed = 60.0` °/s. Increase for a more dramatic pull-back.
+- **Phase boundaries** — `_accelEndTime = 0.10`, `_fullSpeedEndTime = 0.80`, expressed as
+  fractions of `totalDuration`. Shift these to change when the wheel hits full speed or
+  starts braking.
+- **Acceleration curve** — Phase 2 uses `Lerp(−windUpSpeed, peakVelocity, t²)`. Change
+  `t²` to `t³` for a slower build-up, or `t` for a linear ramp.
+- **Friction formula** — `frictionRate = 0.20 + (Friction − 1) × 0.28`. Adjust the
+  multiplier to change how dramatically higher friction values differ from lower ones.
+- **Stop threshold** — `_currentVelocity < 0.5 °/s`. Lower for a more precise stop;
+  raise if the wheel visibly creeps at the end.
 
 ### Change how slices are drawn
 

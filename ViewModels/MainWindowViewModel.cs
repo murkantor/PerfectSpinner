@@ -41,18 +41,20 @@ namespace GoldenSpinner.ViewModels
         [ObservableProperty] private int _winnerIndex = -1;
         [ObservableProperty] private string _winnerMessage = string.Empty;
 
-        /// <summary>Spin duration in seconds (shown in the NumericUpDown).</summary>
+        /// <summary>
+        /// "Speed" setting (1–30).  Controls the peak angular velocity of the wheel:
+        /// higher = faster spin = longer free-spin coast.
+        /// Peak velocity = SpinDurationSeconds × 180 °/s.
+        /// The name is kept as SpinDurationSeconds for save-file compatibility.
+        /// </summary>
         [ObservableProperty] private decimal _spinDurationSeconds = 4m;
 
         /// <summary>
-        /// Inertia level 1–10.  Controls how many extra full rotations the wheel
-        /// makes before landing.  Each level maps to a random range so the wheel
-        /// never lands in exactly the same spot twice.
-        ///   Level 1  →  2–3 extra spins
-        ///   Level 5  → 10–15 extra spins
-        ///   Level 10 → 20–30 extra spins
+        /// Friction level 1–10 applied during the free-spin coast.
+        ///   1 = near-frictionless (coasts a long time)
+        ///  10 = heavy friction   (stops quickly)
         /// </summary>
-        [ObservableProperty] private int _inertia = 5;
+        [ObservableProperty] private int _friction = 5;
 
         /// <summary>
         /// Background colour of the Spinner window used for OBS chromakey capture.
@@ -64,15 +66,33 @@ namespace GoldenSpinner.ViewModels
 
         public bool HasSelectedSlice => SelectedSlice != null;
 
-        // ── Spin animation state ──────────────────────────────────────────────
+        // ── Physics animation state ───────────────────────────────────────────
+        //
+        // Spin is now driven by a velocity simulation rather than a fixed-target
+        // easing curve.  Phases (all times in seconds from _animStart):
+        //
+        //  [0 → _windUpDuration]   Phase 1 – wind-up: backward, ease-in
+        //  [_windUpDuration → _accelEndTime]  Phase 2 – acceleration: backward→peak
+        //  [_accelEndTime → _fullSpeedEndTime] Phase 3 – full speed: cruise at peak
+        //  [_fullSpeedEndTime → _halfSpeedEndTime] Phase 4 – engine-off: linear ½ peak
+        //  [_halfSpeedEndTime → stop]  Phase 5 – free spin: exponential friction decay
+        //
+        // Winner is read from CurrentRotation when velocity drops below threshold.
 
-        private DispatcherTimer? _animTimer;
-        private double _animStartAngle;
-        private double _animTargetAngle;
-        private DateTimeOffset _animStart;
-        private TimeSpan _animDuration;
-        private int _pendingWinnerIndex;
+        private DispatcherTimer?  _animTimer;
+        private DateTimeOffset    _animStart;
+        private DateTimeOffset    _lastTickTime;
         private TaskCompletionSource? _spinTcs;
+        private bool              _spinCancelled;
+
+        private double _peakVelocity;       // deg/s at maximum forward speed
+        private double _windUpDuration;     // seconds of backward wind-up phase
+        private double _accelEndTime;       // seconds: acceleration phase ends
+        private double _fullSpeedEndTime;   // seconds: full-speed cruise ends
+        private double _halfSpeedEndTime;   // seconds: powered phase ends
+        private double _windUpSpeed;        // backward deg/s at peak of wind-up
+        private double _currentVelocity;    // deg/s — negative means backward
+        private bool   _inFreeSpin;
 
         // ── Default slice colours (rotate through these when adding slices) ───
 
@@ -109,50 +129,49 @@ namespace GoldenSpinner.ViewModels
         // ── Commands ──────────────────────────────────────────────────────────
 
         /// <summary>
-        /// Starts the spin animation.  Returns only after the animation finishes
-        /// so the RelayCommand keeps the button disabled throughout.
+        /// Starts the physics-based spin.  Awaits until the wheel comes to a
+        /// complete stop (free-spin coast included), keeping the button disabled
+        /// for the full duration.
+        ///
+        /// Animation phases:
+        ///   1. Wind-up  — wheel reverses (2–5 % of powered duration)
+        ///   2. Accel    — from reverse through zero to peak velocity (up to 10 %)
+        ///   3. Cruise   — full peak velocity (10 % → 80 %)
+        ///   4. Engine off — linear drop to ½ peak (80 % → 100 %)
+        ///   5. Free spin — exponential friction decay until velocity &lt; 0.5 °/s
+        ///
+        /// Winner is whichever slice is under the pointer when the wheel stops.
         /// </summary>
         [RelayCommand(CanExecute = nameof(CanSpinWheel))]
         private async Task SpinWheelAsync()
         {
-            var n = Slices.Count;
-            if (n == 0) return;
+            if (Slices.Count == 0) return;
 
             WinnerMessage = string.Empty;
-            WinnerIndex = -1;
+            WinnerIndex   = -1;
 
-            var rng = new Random();
-            _pendingWinnerIndex = rng.Next(n);
+            var rng           = new Random();
+            var totalDuration = Math.Max(1.0, (double)SpinDurationSeconds);
 
-            // ── Calculate target rotation ──────────────────────────────────
-            // Wheel is drawn with slice 0 starting at -90° (top), going clockwise.
-            // After rotating the canvas by R degrees, the pointer (fixed at top)
-            // sees canvas angle:  pointerAngle = (360 - R%360) % 360
-            // Slice i occupies:   [i*sliceDeg, (i+1)*sliceDeg)
-            // To land on slice w's centre:  targetMod = 360 - (w + 0.5)*sliceDeg
-            var sliceDeg = 360.0 / n;
-            var targetMod = (360.0 - (_pendingWinnerIndex + 0.5) * sliceDeg % 360.0 + 360.0) % 360.0;
+            // Peak velocity scales with the Speed setting (higher = faster wheel).
+            _peakVelocity = totalDuration * 180.0;   // deg/s
 
-            // Add a small random wobble (±30 % of one slice) for variety
-            var wobble = (rng.NextDouble() - 0.5) * sliceDeg * 0.6;
-            targetMod = ((targetMod + wobble) % 360.0 + 360.0) % 360.0;
+            // Wind-up: random 2–5 % of the powered duration, constant backward speed.
+            _windUpDuration = (0.02 + rng.NextDouble() * 0.03) * totalDuration;
+            _windUpSpeed    = 60.0;   // deg/s backward
 
-            var currentMod = ((CurrentRotation % 360.0) + 360.0) % 360.0;
-            var delta = (targetMod - currentMod + 360.0) % 360.0;
+            // Phase time boundaries (seconds from _animStart).
+            _accelEndTime     = 0.10 * totalDuration;
+            _fullSpeedEndTime = 0.80 * totalDuration;
+            _halfSpeedEndTime = totalDuration;
 
-            // Ensure at least one full rotation beyond the target offset
-            if (delta < sliceDeg) delta += 360.0;
-            // Inertia 1–10: minSpins = inertia×2, plus 0–inertia random bonus spins.
-            // Level 1 → 2–3 spins; Level 5 → 10–15; Level 10 → 20–30.
-            var clampedInertia = Math.Clamp(Inertia, 1, 10);
-            delta += (clampedInertia * 2 + rng.Next(clampedInertia + 1)) * 360.0;
+            _inFreeSpin      = false;
+            _currentVelocity = 0.0;
+            _spinCancelled   = false;
 
-            _animStartAngle = CurrentRotation;
-            _animTargetAngle = CurrentRotation + delta;
-            _animStart = DateTimeOffset.UtcNow;
-            _animDuration = TimeSpan.FromSeconds(Math.Max(1.0, (double)SpinDurationSeconds));
+            _animStart    = DateTimeOffset.UtcNow;
+            _lastTickTime = _animStart;
 
-            // Use a TaskCompletionSource so we can await the timer-based animation.
             _spinTcs = new TaskCompletionSource();
 
             _animTimer = new DispatcherTimer(DispatcherPriority.Render)
@@ -162,11 +181,18 @@ namespace GoldenSpinner.ViewModels
             _animTimer.Tick += OnAnimationTick;
             _animTimer.Start();
 
-            await _spinTcs.Task;     // suspend until animation completes
+            await _spinTcs.Task;
 
-            // ── Post-spin ──────────────────────────────────────────────────
-            var winner = Slices[_pendingWinnerIndex];
-            WinnerIndex = _pendingWinnerIndex;
+            if (_spinCancelled) return;
+
+            // Winner = slice under the pointer at rest.
+            var n            = Slices.Count;
+            var sliceDeg     = 360.0 / n;
+            var pointerAngle = ((360.0 - CurrentRotation % 360.0) % 360.0 + 360.0) % 360.0;
+            var winnerIdx    = (int)(pointerAngle / sliceDeg) % n;
+
+            var winner = Slices[winnerIdx];
+            WinnerIndex   = winnerIdx;
             WinnerMessage = $"🎉  {winner.Label}!";
 
             if (!string.IsNullOrEmpty(winner.SoundPath))
@@ -176,9 +202,22 @@ namespace GoldenSpinner.ViewModels
         [RelayCommand]
         private void ResetWheel()
         {
+            // Stop any running animation cleanly.
+            if (_animTimer != null)
+            {
+                _animTimer.Stop();
+                _animTimer.Tick -= OnAnimationTick;
+                _animTimer = null;
+            }
+
+            _spinCancelled   = true;
+            _currentVelocity = 0.0;
+            _inFreeSpin      = false;
+            _spinTcs?.TrySetResult();
+
             CurrentRotation = 0;
-            WinnerIndex = -1;
-            WinnerMessage = string.Empty;
+            WinnerIndex     = -1;
+            WinnerMessage   = string.Empty;
         }
 
         [RelayCommand]
@@ -308,48 +347,76 @@ namespace GoldenSpinner.ViewModels
 
         private void OnAnimationTick(object? sender, EventArgs e)
         {
-            var elapsed = DateTimeOffset.UtcNow - _animStart;
-            var t = Math.Min(elapsed.TotalSeconds / _animDuration.TotalSeconds, 1.0);
+            var now     = DateTimeOffset.UtcNow;
+            var elapsed = (now - _animStart).TotalSeconds;
+            var dt      = Math.Min((now - _lastTickTime).TotalSeconds, 0.05); // cap at 50 ms
+            _lastTickTime = now;
 
-            // Two-phase easing for dramatic finale:
-            //   Phase 1 (t ∈ [0, 0.67]): quadratic ease-in-out — wheel accelerates
-            //     and cruises, covering 82 % of the total rotation.
-            //   Phase 2 (t ∈ [0.67, 1.0]): quintic ease-out — steep deceleration
-            //     over the last 33 % of time for the remaining 18 % of rotation.
-            const double splitT        = 0.67;
-            const double splitProgress = 0.82;
-
-            double eased;
-            if (t < splitT)
+            if (!_inFreeSpin)
             {
-                var t1 = t / splitT;
-                // Quadratic ease-in-out
-                var phase1 = t1 < 0.5
-                    ? 2.0 * t1 * t1
-                    : 1.0 - Math.Pow(-2.0 * t1 + 2.0, 2.0) / 2.0;
-                eased = phase1 * splitProgress;
+                if (elapsed < _windUpDuration)
+                {
+                    // Phase 1: ease-in to backward wind-up speed.
+                    var t = elapsed / _windUpDuration;
+                    _currentVelocity = -_windUpSpeed * (t * t);
+                }
+                else if (elapsed < _accelEndTime)
+                {
+                    // Phase 2: ease-in acceleration from -windUpSpeed to +peakVelocity.
+                    var span = _accelEndTime - _windUpDuration;
+                    var t    = (elapsed - _windUpDuration) / span;
+                    _currentVelocity = Lerp(-_windUpSpeed, _peakVelocity, t * t);
+                }
+                else if (elapsed < _fullSpeedEndTime)
+                {
+                    // Phase 3: cruise at peak velocity.
+                    _currentVelocity = _peakVelocity;
+                }
+                else if (elapsed < _halfSpeedEndTime)
+                {
+                    // Phase 4: linear deceleration from peak to half-peak.
+                    var t = (elapsed - _fullSpeedEndTime)
+                          / (_halfSpeedEndTime - _fullSpeedEndTime);
+                    _currentVelocity = _peakVelocity * (1.0 - 0.5 * t);
+                }
+                else
+                {
+                    // Hand off to free spin at half peak velocity.
+                    _currentVelocity = _peakVelocity / 2.0;
+                    _inFreeSpin      = true;
+                }
             }
             else
             {
-                var t2 = (t - splitT) / (1.0 - splitT);
-                // Quintic ease-out — very steep deceleration
-                var phase2 = 1.0 - Math.Pow(1.0 - t2, 5.0);
-                eased = splitProgress + phase2 * (1.0 - splitProgress);
+                // Phase 5: exponential friction decay.
+                // Friction 1 = gentle coast (rate ≈ 0.20/s)
+                // Friction 10 = quick stop  (rate ≈ 2.72/s)
+                var frictionRate = 0.20 + (Friction - 1) * 0.28;
+                _currentVelocity *= (1.0 - frictionRate * dt);
+
+                if (_currentVelocity < 0.5)
+                {
+                    FinishSpin();
+                    return;
+                }
             }
 
-            CurrentRotation = _animStartAngle + (_animTargetAngle - _animStartAngle) * eased;
+            CurrentRotation += _currentVelocity * dt;
+        }
 
-            if (t >= 1.0)
-            {
-                _animTimer!.Stop();
-                _animTimer.Tick -= OnAnimationTick;
-                _animTimer = null;
-                CurrentRotation = _animTargetAngle;
-                _spinTcs?.TrySetResult();
-            }
+        private void FinishSpin()
+        {
+            _animTimer!.Stop();
+            _animTimer.Tick -= OnAnimationTick;
+            _animTimer       = null;
+            _currentVelocity = 0.0;
+            _spinTcs?.TrySetResult();
         }
 
         // ── Helpers ───────────────────────────────────────────────────────────
+
+        private static double Lerp(double a, double b, double t) =>
+            a + (b - a) * Math.Clamp(t, 0.0, 1.0);
 
         private void NotifyMoveCanExecuteChanged()
         {

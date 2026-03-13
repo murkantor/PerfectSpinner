@@ -19,6 +19,9 @@ namespace GoldenSpinner.Views
     {
         private readonly SpinnerWindow _spinnerWindow;
 
+        // Guard against the mutual-activation handlers triggering each other.
+        private bool _activatingPair;
+
         public MainWindow()
         {
             InitializeComponent();
@@ -36,15 +39,29 @@ namespace GoldenSpinner.Views
             _spinnerWindow.Show();
 
             // ── Bidirectional close ───────────────────────────────────────────
-            // Closing either window closes the other.  Using Closed (past-tense)
-            // on the spinner avoids re-entrancy: by the time it fires the window
-            // is already gone, so the resulting Close() here is the only action.
-            Closing              += (_, _) => _spinnerWindow.Close();
+            Closing               += (_, _) => _spinnerWindow.Close();
             _spinnerWindow.Closed += (_, _) => Close();
 
+            // ── Mutual activation — clicking either window raises both ─────────
+            // The _activatingPair guard prevents the two handlers calling each
+            // other in an infinite loop.
+            Activated += (_, _) =>
+            {
+                if (_activatingPair) return;
+                _activatingPair = true;
+                _spinnerWindow.Activate();
+                _activatingPair = false;
+            };
+
+            _spinnerWindow.Activated += (_, _) =>
+            {
+                if (_activatingPair) return;
+                _activatingPair = true;
+                Activate();
+                _activatingPair = false;
+            };
+
             // ── Side-by-side centred layout on startup ────────────────────────
-            // Screens are only queryable after the window is shown, so we defer
-            // to the Opened event.  SpinnerWindow is already visible by then.
             Opened += (_, _) => PositionWindowsSideBySide();
         }
 

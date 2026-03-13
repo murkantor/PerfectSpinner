@@ -54,7 +54,7 @@
                       RowSpacing="6">
 
                     <TextBlock Grid.Row="0" Grid.Column="0"
-                               Text="Duration (s):"
+                               Text="Speed (1–30):"
                                VerticalAlignment="Center" Margin="0,0,10,0" />
                     <NumericUpDown Grid.Row="0" Grid.Column="1"
                                   Value="{Binding SpinDurationSeconds}"
@@ -62,10 +62,10 @@
                                   FormatString="F1" />
 
                     <TextBlock Grid.Row="1" Grid.Column="0"
-                               Text="Inertia (1–10):"
+                               Text="Friction (1–10):"
                                VerticalAlignment="Center" Margin="0,0,10,0" />
                     <NumericUpDown Grid.Row="1" Grid.Column="1"
-                                  Value="{Binding Inertia}"
+                                  Value="{Binding Friction}"
                                   Minimum="1" Maximum="10" Increment="1"
                                   FormatString="F0" />
 
