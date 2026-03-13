@@ -44,7 +44,7 @@ namespace GoldenSpinner.Controls
             AvaloniaProperty.Register<SpinnerWheelControl, int>(nameof(WinnerIndex), -1);
 
         public static readonly StyledProperty<bool> UseWeightedSlicesProperty =
-            AvaloniaProperty.Register<SpinnerWheelControl, bool>(nameof(UseWeightedSlices), true);
+            AvaloniaProperty.Register<SpinnerWheelControl, bool>(nameof(UseWeightedSlices), false);
 
         // ── Property accessors ───────────────────────────────────────────────
 
@@ -165,11 +165,11 @@ namespace GoldenSpinner.Controls
         private void DrawSlices(DrawingContext ctx, Point center, double radius,
             IList<WheelSliceViewModel> slices, bool useWeightedSlices)
         {
-            // Weighted mode: exclude inactive slices AND zero-weight slices (0-arc slices).
-            // Unweighted mode: exclude only inactive slices; weight value is ignored.
+            // Render all active slices regardless of weight — a weight-0 slice stays
+            // visible until the next spin deactivates it, so the user can see what won.
             var active = new List<WheelSliceViewModel>();
             foreach (var s in slices)
-                if (s.IsActive && (!useWeightedSlices || s.Weight > 0)) active.Add(s);
+                if (s.IsActive) active.Add(s);
 
             if (active.Count == 0)
             {
@@ -178,9 +178,8 @@ namespace GoldenSpinner.Controls
             }
 
             double totalWeight = useWeightedSlices
-                ? active.Sum(s => s.Weight)
+                ? active.Sum(s => Math.Max(1.0, s.Weight))
                 : active.Count;
-            if (totalWeight <= 0) totalWeight = active.Count;
 
             var borderPen = new Pen(Brushes.White, 2);
             var winnerPen = new Pen(new SolidColorBrush(Color.Parse("#FFD700")), 4);  // gold highlight
@@ -190,7 +189,8 @@ namespace GoldenSpinner.Controls
             for (int i = 0; i < n; i++)
             {
                 var slice    = active[i];
-                double w     = useWeightedSlices ? slice.Weight : 1.0;
+                // Floor weight at 1 so a weight-0 slice still has a visible arc.
+                double w     = useWeightedSlices ? Math.Max(1.0, slice.Weight) : 1.0;
                 var sliceRad = (w / totalWeight) * 2 * Math.PI;
                 var endAngle = startAngle + sliceRad;
                 var midAngle = startAngle + sliceRad / 2;
@@ -209,13 +209,15 @@ namespace GoldenSpinner.Controls
                 DrawPieSlice(ctx, center, radius, startAngle, endAngle, fill,
                     isWinner ? winnerPen : borderPen, n == 1);
 
-                // Image (small thumbnail near the arc edge)
-                if (slice.LoadedBitmap is Bitmap bmp)
-                    DrawSliceImage(ctx, bmp, center, radius, midAngle, sliceRad);
+                bool hasImage = slice.LoadedBitmap is not null;
 
-                // Text label
+                // Image near the outer edge; pull it further out when a label also exists
+                if (slice.LoadedBitmap is Bitmap bmp)
+                    DrawSliceImage(ctx, bmp, center, radius, midAngle, sliceRad, hasLabel: !string.IsNullOrEmpty(slice.Label));
+
+                // Label centred in the slice; shift inward when an image also occupies the slot
                 if (!string.IsNullOrEmpty(slice.Label))
-                    DrawSliceLabel(ctx, slice.Label, center, radius, midAngle, n);
+                    DrawSliceLabel(ctx, slice.Label, center, radius, midAngle, n, hasImage);
 
                 startAngle = endAngle;
             }
@@ -249,10 +251,11 @@ namespace GoldenSpinner.Controls
         }
 
         private static void DrawSliceImage(DrawingContext ctx, Bitmap bmp, Point center,
-            double radius, double midAngle, double sliceRad)
+            double radius, double midAngle, double sliceRad, bool hasLabel)
         {
-            // Place image at 55 % of the radius from centre
-            var imgR = radius * 0.55;
+            // With a label: push image toward the rim so they don't overlap.
+            // Without a label: centre the image in the slice.
+            var imgR = radius * (hasLabel ? 0.72 : 0.5);
             var ix = center.X + imgR * Math.Cos(midAngle);
             var iy = center.Y + imgR * Math.Sin(midAngle);
 
@@ -264,13 +267,13 @@ namespace GoldenSpinner.Controls
         }
 
         private static void DrawSliceLabel(DrawingContext ctx, string label, Point center,
-            double radius, double midAngle, int sliceCount)
+            double radius, double midAngle, int sliceCount, bool hasImage)
         {
             // Scale font with slice count
             double fontSize = sliceCount <= 4 ? 14 : sliceCount <= 8 ? 12 : 10;
 
-            // Place text halfway to the rim (or further if no image)
-            var textR = radius * 0.7;
+            // Centre the label in the slice. With an image near the rim, pull inward.
+            var textR = radius * (hasImage ? 0.32 : 0.5);
             var tx = center.X + textR * Math.Cos(midAngle);
             var ty = center.Y + textR * Math.Sin(midAngle);
 

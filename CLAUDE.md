@@ -90,7 +90,7 @@ The app runs as **two separate windows** that share one `MainWindowViewModel`:
 ```
 
 **Why this works for streaming:**
-- `SpinnerWindow.Background` is bound to `ChromaKeyColor` (default `#00B140` broadcast green).
+- `SpinnerWindow.Background` is bound to `ChromaKeyColor` (default `#00FF00` broadcast green).
 - `SpinnerWheelControl` draws only the circle and its contents — no background fill — so
   the corners and the area outside the wheel show through to the solid chromakey colour.
 - OBS Window Capture on `SpinnerWindow` + a Chroma Key filter removes the solid colour,
@@ -305,9 +305,9 @@ from disk into `LoadedBitmap`. Logs on failure; does not throw.
 | `WinnerMessage` | `string` | Banner text shown on SpinnerWindow after spin |
 | `SpinDurationSeconds` | `decimal` | Labelled "Speed" in UI. Peak velocity = Speed × 180 °/s |
 | `Friction` | `int` | 1–10. Free-spin friction rate. Decay = `0.20 + (Friction-1) × 0.28` /s |
-| `ChromaKeyColor` | `string` | CSS hex for SpinnerWindow background (OBS chroma key) |
+| `ChromaKeyColor` | `string` | CSS hex for SpinnerWindow background (OBS chroma key). Default `#00FF00` |
 | `GlobalWeight` | `double` | Default weight value for "Apply to All" |
-| `UseWeightedSlices` | `bool` | When true: proportional slice sizing + post-spin deduction |
+| `UseWeightedSlices` | `bool` | When true: proportional slice sizing + post-spin deduction. Default `false` |
 
 #### Slice weighting system
 
@@ -361,6 +361,8 @@ restores it; the command is disabled when no snapshot exists (`CanUndoWeight()`)
 | `LoadLayoutAsync()` | `LoadLayoutCommand` | always | Opens load dialog, rebuilds `Slices` from model |
 | `ApplyWeightToAll()` | `ApplyWeightToAllCommand` | always | Saves snapshot, applies `GlobalWeight` to all slices |
 | `UndoWeight()` | `UndoWeightCommand` | `CanUndoWeight()` | Restores `_weightSnapshot`; disabled when no snapshot |
+| `RandomiseStartAngle()` | `RandomiseStartAngleCommand` | always | Immediately sets `CurrentRotation` to a random 0–360° angle |
+| `RandomiseSliceOrder()` | `RandomiseSliceOrderCommand` | always | Immediately Fisher-Yates shuffles `Slices`; preserves `SelectedSlice` |
 
 **CommunityToolkit naming rules:**
 - Method `SpinWheelAsync` → command `SpinWheelCommand` (strips `Async` suffix, appends `Command`)
@@ -427,6 +429,12 @@ Active slice filter:
 - `UseWeightedSlices=ON`: `s.IsActive && s.Weight > 0`
 - `UseWeightedSlices=OFF`: `s.IsActive` only
 
+#### Helpers
+
+- `Lerp(a, b, t)` — linear interpolation, clamped 0–1.
+- `ShuffleSlices(Random rng)` — Fisher-Yates in-place shuffle of `Slices`. Saves and restores `SelectedSlice` (the reference stays valid; clearing + re-adding doesn't break it). Used by `RandomiseSliceOrderCommand`.
+- `NotifyMoveCanExecuteChanged()` — raises CanExecute for both `MoveUpCommand` and `MoveDownCommand` together.
+
 #### Palette colours
 
 When a new slice is added: `PaletteColors[Slices.Count % PaletteColors.Length]`.
@@ -447,6 +455,7 @@ Window (760×640, title "SpinnerWheel — Settings")
     │     SpinnerWheel header
     │     Grid: [SPIN! button | ↺ Reset button]
     │     Grid: Speed (1–30) | Friction (1–10) — aligned two-column grid
+    │     StackPanel: "🔀 Randomise start" + "🔀 Randomise order" instant-action buttons
     │     Chroma Key: TextBox + colour swatch flyout (ColorView)
     │     Weights section:
     │       "Weights" header + "Use weighted slices" CheckBox
@@ -532,8 +541,8 @@ Background = ChromaKeyColor (live)
     ├── Viewbox (Stretch=Uniform)
     │   └── SpinnerWheelControl (600×600)
     │         Slices, RotationAngle, WinnerIndex, UseWeightedSlices bound from VM
-    └── Border (VerticalAlignment=Bottom, IsVisible when WinnerMessage non-empty)
-            Background = #CC000000 (dark semi-transparent pill)
+    └── Border (VerticalAlignment=Center, HorizontalAlignment=Center, IsVisible when WinnerMessage non-empty)
+            Background = #CC000000 (dark semi-transparent pill, CornerRadius=8, Padding=24,10)
             └── TextBlock: WinnerMessage (30px bold white)
 ```
 
@@ -572,19 +581,24 @@ registered with `AffectsRender<>` — changing them automatically triggers a red
 #### Active slice filter in DrawSlices
 
 ```csharp
-// Only active slices are drawn. Zero-weight slices are also excluded in weighted mode
-// (a 0-arc slice cannot meaningfully appear).
-if (s.IsActive && (!useWeightedSlices || s.Weight > 0)) active.Add(s);
+// Only IsActive slices are drawn. Zero-weight slices are NOT excluded from rendering —
+// they stay visible until the start of the next spin so the user can see what won.
+foreach (var s in slices)
+    if (s.IsActive) active.Add(s);
 ```
 
 When `active` is empty, `DrawEmptyWheel` is shown.
 
 #### Weighted arc calculation
 
+Weight is floored at 1.0 so a weight-0 slice still has a visible arc:
+
 ```csharp
-double totalWeight = useWeightedSlices ? active.Sum(s => s.Weight) : active.Count;
-double w           = useWeightedSlices ? slice.Weight : 1.0;
-var sliceRad       = (w / totalWeight) * 2 * Math.PI;
+double totalWeight = useWeightedSlices
+    ? active.Sum(s => Math.Max(1.0, s.Weight))
+    : active.Count;
+double w       = useWeightedSlices ? Math.Max(1.0, slice.Weight) : 1.0;
+var sliceRad   = (w / totalWeight) * 2 * Math.PI;
 ```
 
 `startAngle` is accumulated across the loop (not recalculated from index × sliceRad),
@@ -611,8 +625,8 @@ with `ArcTo`, `isLargeArc = true` when arc > 180°).
 
 #### DrawSliceImage / DrawSliceLabel
 
-- Image at 55% radius, size capped at `min(radius × 0.28, 52px)`.
-- Label at 70% radius. Font: 14px (≤4 slices), 12px (5–8), 10px (>8). Truncated at 16 chars.
+- **Image**: at 72% radius when a label also exists (pushed toward rim); 50% radius when alone. Size capped at `min(radius × 0.28, 52px)`.
+- **Label**: at 50% radius (centre of slice); pulled to 32% when an image is also present (pushed inward). Font: 14px (≤4 slices), 12px (5–8), 10px (>8). Truncated at 16 chars.
 
 #### Fixed decorations
 

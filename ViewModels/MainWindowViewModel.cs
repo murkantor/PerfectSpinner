@@ -60,7 +60,7 @@ namespace GoldenSpinner.ViewModels
         /// Background colour of the Spinner window used for OBS chromakey capture.
         /// Any valid CSS hex string. Defaults to broadcast-safe green.
         /// </summary>
-        [ObservableProperty] private string _chromaKeyColor = "#00B140";
+        [ObservableProperty] private string _chromaKeyColor = "#00FF00";
 
         /// <summary>
         /// The weight value applied to all slices when the user clicks "Apply to All".
@@ -71,7 +71,8 @@ namespace GoldenSpinner.ViewModels
         /// When true slices are sized and selected proportionally to their Weight.
         /// When false all active slices are treated as equal weight.
         /// </summary>
-        [ObservableProperty] private bool _useWeightedSlices = true;
+        [ObservableProperty] private bool _useWeightedSlices = false;
+
 
         // ── Derived ───────────────────────────────────────────────────────────
 
@@ -165,11 +166,20 @@ namespace GoldenSpinner.ViewModels
         {
             if (Slices.Count == 0) return;
 
+            // Deactivate any slices whose weight reached 0 on the previous spin.
+            // Done here rather than immediately after the spin so the user can see
+            // the winning slice on the wheel before it disappears.
+            if (UseWeightedSlices)
+            {
+                foreach (var s in Slices)
+                    if (s.Weight <= 0) s.IsActive = false;
+            }
+
             WinnerMessage = string.Empty;
             WinnerIndex   = -1;
 
-            var rng           = new Random();
-            var totalDuration = Math.Max(1.0, (double)SpinDurationSeconds);
+            var rng = new Random();
+            var totalDuration  = Math.Max(1.0, (double)SpinDurationSeconds);
 
             // Peak velocity scales with the Speed setting (higher = faster wheel).
             _peakVelocity = totalDuration * 180.0;   // deg/s
@@ -229,12 +239,12 @@ namespace GoldenSpinner.ViewModels
             WinnerIndex   = Slices.IndexOf(winnerSlice);
             WinnerMessage = $"🎉  {winnerSlice.Label}!";
 
-            // Weight deduction and auto-deactivation only apply in weighted mode.
+            // Weight deduction only applies in weighted mode.
+            // IsActive is NOT set to false here — the slice stays visible on the wheel
+            // until the next spin, so the user can see what won before it disappears.
             if (UseWeightedSlices)
             {
                 winnerSlice.Weight = Math.Max(0.0, winnerSlice.Weight - 1.0);
-                if (winnerSlice.Weight <= 0)
-                    winnerSlice.IsActive = false;
                 _weightSnapshot = null;
                 UndoWeightCommand.NotifyCanExecuteChanged();
             }
@@ -263,6 +273,14 @@ namespace GoldenSpinner.ViewModels
             WinnerIndex     = -1;
             WinnerMessage   = string.Empty;
         }
+
+        [RelayCommand]
+        private void RandomiseStartAngle() =>
+            CurrentRotation = new Random().NextDouble() * 360.0;
+
+        [RelayCommand]
+        private void RandomiseSliceOrder() =>
+            ShuffleSlices(new Random());
 
         [RelayCommand]
         private void AddSlice()
@@ -487,6 +505,21 @@ namespace GoldenSpinner.ViewModels
 
         private static double Lerp(double a, double b, double t) =>
             a + (b - a) * Math.Clamp(t, 0.0, 1.0);
+
+        /// <summary>Fisher-Yates shuffle on the Slices collection.</summary>
+        private void ShuffleSlices(Random rng)
+        {
+            var selected = SelectedSlice;
+            var list = Slices.ToList();
+            for (int i = list.Count - 1; i > 0; i--)
+            {
+                int j = rng.Next(i + 1);
+                (list[i], list[j]) = (list[j], list[i]);
+            }
+            Slices.Clear();
+            foreach (var s in list) Slices.Add(s);
+            SelectedSlice = selected;
+        }
 
         private void NotifyMoveCanExecuteChanged()
         {

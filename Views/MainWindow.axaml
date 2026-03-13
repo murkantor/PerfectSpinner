@@ -71,6 +71,17 @@
 
                 </Grid>
 
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <Button Content="🔀  Randomise start"
+                            Command="{Binding RandomiseStartAngleCommand}"
+                            ToolTip.Tip="Rotate the wheel to a random angle now"
+                            Padding="8,4" />
+                    <Button Content="🔀  Randomise order"
+                            Command="{Binding RandomiseSliceOrderCommand}"
+                            ToolTip.Tip="Shuffle the slice positions now"
+                            Padding="8,4" />
+                </StackPanel>
+
                 <Separator />
 
                 <!-- ── Chroma key ─────────────────────────────────────── -->

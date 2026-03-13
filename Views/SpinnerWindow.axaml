@@ -33,13 +33,12 @@
                 UseWeightedSlices="{Binding UseWeightedSlices}" />
         </Viewbox>
 
-        <!-- Winner banner — overlaid at the bottom, hidden when empty -->
-        <Border VerticalAlignment="Bottom"
+        <!-- Winner banner — overlaid at the centre of the wheel, hidden when empty -->
+        <Border VerticalAlignment="Center"
                 HorizontalAlignment="Center"
                 Background="#CC000000"
                 CornerRadius="8"
                 Padding="24,10"
-                Margin="0,0,0,20"
                 IsVisible="{Binding WinnerMessage,
                             Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
             <TextBlock Text="{Binding WinnerMessage}"
