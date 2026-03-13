@@ -454,6 +454,15 @@ Window (760×640, title "SpinnerWheel — Settings")
 Note: the "Last Winner" display was removed from the Settings window. The winner banner
 is only shown on the `SpinnerWindow` (the OBS capture window).
 
+#### Colour pickers
+
+Both the **Chroma Key** colour and each **Slice colour** have a clickable swatch button
+that opens a `Flyout` containing a full `ColorView` (spectrum wheel + sliders + hex
+input). `IsAlphaVisible="False"` hides the alpha channel since all colours are stored as
+opaque `#RRGGBB`. The `ColorView.Color` property is bound two-way via
+`{StaticResource ColorToHex}` so changes propagate directly to the ViewModel string
+property without any code-behind.
+
 #### Key bindings unique to this window
 
 `ChromaKeyColor` — bound to the hex TextBox (two-way) and to the swatch `Border.Background`
@@ -761,6 +770,21 @@ next to each slice name.
 - Registered in `App.axaml` under key `"HexColorToBrush"`.
 - `Convert`: calls `Color.Parse(hex)` inside a try/catch; returns a gray brush on failure.
 - `ConvertBack`: throws `NotSupportedException` (one-way only).
+
+---
+
+### `Converters/ColorToHexConverter.cs`
+
+**Two-way `IValueConverter`** between a CSS hex string (`string`) and
+`Avalonia.Media.Color`. Used to bind `ColorView.Color` to the ViewModel's string
+properties (`ChromaKeyColor`, `SelectedSlice.ColorHex`).
+
+- Registered in `App.axaml` under key `"ColorToHex"`.
+- `Convert` (string → Color): parses hex, forces alpha to 255 so the `ColorView` never
+  shows a partial-transparency state.
+- `ConvertBack` (Color → string): formats as `#RRGGBB`, discarding alpha so stored
+  values are always opaque RGB hex.
+- Fallback in both directions is `#00B140` (broadcast-safe green).
 
 ---
 

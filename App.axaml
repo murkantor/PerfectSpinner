@@ -11,6 +11,7 @@
 
     <Application.Resources>
         <conv:HexColorToBrushConverter x:Key="HexColorToBrush"/>
+        <conv:ColorToHexConverter      x:Key="ColorToHex"/>
     </Application.Resources>
 
     <Application.Styles>

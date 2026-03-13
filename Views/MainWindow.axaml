@@ -82,12 +82,22 @@
                 <StackPanel Orientation="Horizontal" Spacing="8">
                     <TextBox Text="{Binding ChromaKeyColor}"
                              Watermark="#RRGGBB" Width="110" />
-                    <!-- Live colour swatch -->
-                    <Border Width="40" Height="32" CornerRadius="4"
-                            Background="{Binding ChromaKeyColor,
-                                         Converter={StaticResource HexColorToBrush}}"
-                            BorderBrush="{DynamicResource SystemControlForegroundBaseMediumBrush}"
-                            BorderThickness="1" />
+                    <!-- Swatch button — click to open colour picker flyout -->
+                    <Button Padding="3" ToolTip.Tip="Pick chroma key colour">
+                        <Border Width="40" Height="26" CornerRadius="3"
+                                Background="{Binding ChromaKeyColor,
+                                             Converter={StaticResource HexColorToBrush}}"
+                                BorderBrush="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                                BorderThickness="1" />
+                        <Button.Flyout>
+                            <Flyout Placement="Bottom">
+                                <ColorView Color="{Binding ChromaKeyColor,
+                                                   Mode=TwoWay,
+                                                   Converter={StaticResource ColorToHex}}"
+                                           IsAlphaVisible="False" />
+                            </Flyout>
+                        </Button.Flyout>
+                    </Button>
                 </StackPanel>
 
                 <Separator />
@@ -175,10 +185,28 @@
                                  Watermark="Enter a label…"
                                  MaxLength="50" />
 
-                        <TextBlock Text="Colour (hex):" Margin="0,4,0,0" />
-                        <TextBox Text="{Binding SelectedSlice.ColorHex}"
-                                 Watermark="#RRGGBB"
-                                 MaxLength="9" />
+                        <TextBlock Text="Colour:" Margin="0,4,0,0" />
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <TextBox Text="{Binding SelectedSlice.ColorHex}"
+                                     Watermark="#RRGGBB"
+                                     MaxLength="9" />
+                            <!-- Swatch button — click to open colour picker flyout -->
+                            <Button Padding="3" ToolTip.Tip="Pick slice colour">
+                                <Border Width="32" Height="26" CornerRadius="3"
+                                        Background="{Binding SelectedSlice.ColorHex,
+                                                     Converter={StaticResource HexColorToBrush}}"
+                                        BorderBrush="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                                        BorderThickness="1" />
+                                <Button.Flyout>
+                                    <Flyout Placement="Left">
+                                        <ColorView Color="{Binding SelectedSlice.ColorHex,
+                                                           Mode=TwoWay,
+                                                           Converter={StaticResource ColorToHex}}"
+                                                   IsAlphaVisible="False" />
+                                    </Flyout>
+                                </Button.Flyout>
+                            </Button>
+                        </StackPanel>
 
                         <TextBlock Text="Image:" Margin="0,4,0,0" />
                         <TextBlock Text="{Binding SelectedSlice.ImagePath}"
