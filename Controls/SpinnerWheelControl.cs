@@ -266,21 +266,34 @@ namespace GoldenSpinner.Controls
         {
             _confettiParticles.Clear();
             var rng = new Random();
+
+            // We need the wheel radius at spawn time. Use a cached value; it will
+            // be accurate once the control has been laid out at least once.
+            // Fall back to a reasonable default if not yet measured.
+            var size   = Math.Min(Bounds.Width, Bounds.Height);
+            var radius = (size > 0 ? size : 600) / 2.0 - 18;
+
             for (int i = 0; i < 120; i++)
             {
-                var angle = rng.NextDouble() * 2 * Math.PI;
-                var speed = 40 + rng.NextDouble() * 160; // px/s
+                // Each particle has a personal max spread radius (40–90 % of wheel).
+                // Speed is set so it arrives at maxSpread exactly at the end of its lifetime,
+                // ensuring no particle ever exceeds the wheel boundary.
+                var angle     = rng.NextDouble() * 2 * Math.PI;
+                var lifetime  = 1.5 + rng.NextDouble() * 2.0;
+                var maxSpread = radius * (0.4 + rng.NextDouble() * 0.5);
+                var speed     = maxSpread / lifetime;
+
                 _confettiParticles.Add(new ConfettiParticle
                 {
                     X           = 0,
                     Y           = 0,
                     VX          = speed * Math.Cos(angle),
                     VY          = speed * Math.Sin(angle),
-                    BaseSize    = 8 + rng.NextDouble() * 14,
+                    BaseSize    = 10 + rng.NextDouble() * 16,
                     Rotation    = rng.NextDouble() * 360,
                     RotVelocity = (rng.NextDouble() - 0.5) * 720,
                     Age         = 0,
-                    Lifetime    = 2.0 + rng.NextDouble() * 1.5,
+                    Lifetime    = lifetime,
                     Color       = ConfettiColors[rng.Next(ConfettiColors.Length)],
                     Shape       = rng.Next(2),
                 });
@@ -701,13 +714,17 @@ namespace GoldenSpinner.Controls
 
                     double t = p.Age / p.Lifetime;
 
-                    // Size: starts tiny (0.1×), snaps to full at t=0.3, then keeps growing
-                    // as the particle "rises toward the camera" (top-down perspective).
-                    double scaleFactor = t < 0.3 ? t / 0.3 : 1.0;
-                    double drawSize    = p.BaseSize * scaleFactor * (1.0 + t * 2.5);
+                    // Parabolic arc: height = 4t(1-t)
+                    //   t=0   → height=0  (just launched, flat on wheel, tiny)
+                    //   t=0.5 → height=1  (peak: closest to camera, largest)
+                    //   t=1   → height=0  (landed, flat again, tiny)
+                    // This gives the 3D rising-and-falling illusion in a top-down view.
+                    double height  = 4.0 * t * (1.0 - t);
+                    double drawSize = p.BaseSize * height;
+                    if (drawSize < 0.5) continue; // skip invisible particles
 
-                    // Opacity: fully visible until 70 % of lifetime, then fades to 0.
-                    double opacity = t < 0.7 ? 1.0 : 1.0 - (t - 0.7) / 0.3;
+                    // Slight opacity fade in the final 15 % so landing is smooth.
+                    double opacity = t > 0.85 ? (1.0 - t) / 0.15 : 1.0;
                     if (opacity <= 0) continue;
 
                     double px = center.X + p.X;
