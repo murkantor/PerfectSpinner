@@ -382,7 +382,7 @@ namespace GoldenSpinner.Controls
                 // ensuring no particle ever exceeds the wheel boundary.
                 var angle     = rng.NextDouble() * 2 * Math.PI;
                 var lifetime  = 1.5 + rng.NextDouble() * 2.0;
-                var maxSpread = radius * (0.4 + rng.NextDouble() * 0.5);
+                var maxSpread = radius * (0.65 + rng.NextDouble() * 0.33);
                 var speed     = maxSpread / lifetime;
 
                 // Shape: Mixed picks randomly from all 4; specific mode forces one shape.
