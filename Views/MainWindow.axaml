@@ -33,7 +33,7 @@
 
             <Button Grid.Column="0" Content="◀" Click="OnScrollLeft"
                     Padding="6,4" VerticalAlignment="Stretch"
-                    ToolTip.Tip="Scroll tabs left" />
+                    ToolTip.Tip="Previous wheel" />
 
             <ScrollViewer Grid.Column="1" x:Name="TabScroller"
                           HorizontalScrollBarVisibility="Hidden"
@@ -76,7 +76,7 @@
 
             <Button Grid.Column="2" Content="▶" Click="OnScrollRight"
                     Padding="6,4" VerticalAlignment="Stretch"
-                    ToolTip.Tip="Scroll tabs right" />
+                    ToolTip.Tip="Next wheel" />
 
             <Button Grid.Column="3" Content="+" Command="{Binding AddWheelCommand}"
                     ToolTip.Tip="Add new wheel"

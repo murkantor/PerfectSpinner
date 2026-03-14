@@ -61,15 +61,14 @@ namespace GoldenSpinner.Views
             {
                 if (e.NewItems == null) return;
                 foreach (WheelViewModel wheel in e.NewItems)
-                {
                     wheel.PropertyChanged += OnWheelPropertyChanged;
-                }
-                // Auto-scroll to reveal the newly added tab.
-                Avalonia.Threading.Dispatcher.UIThread.Post(() =>
-                {
-                    var scroller = this.FindControl<ScrollViewer>("TabScroller");
-                    scroller?.ScrollToEnd();
-                }, Avalonia.Threading.DispatcherPriority.Loaded);
+            };
+
+            // ── Auto-scroll tab bar when selection changes ────────────────────
+            vm.PropertyChanged += (_, e) =>
+            {
+                if (e.PropertyName == nameof(MainWindowViewModel.ActiveWheelIndex))
+                    ScrollSelectedTabIntoView();
             };
 
             // Detect double-click on tab header TextBlocks.
@@ -108,20 +107,28 @@ namespace GoldenSpinner.Views
                 vm.DeleteWheel(wheel);
         }
 
-        // ── Scroll button handlers ────────────────────────────────────────────
+        // ── Scroll button handlers (navigate tabs) ────────────────────────────
 
         private void OnScrollLeft(object? sender, RoutedEventArgs e)
         {
-            var scroller = this.FindControl<ScrollViewer>("TabScroller");
-            if (scroller != null)
-                scroller.Offset = new Vector(System.Math.Max(0, scroller.Offset.X - 150), 0);
+            if (DataContext is MainWindowViewModel vm && vm.ActiveWheelIndex > 0)
+                vm.ActiveWheelIndex--;
         }
 
         private void OnScrollRight(object? sender, RoutedEventArgs e)
         {
-            var scroller = this.FindControl<ScrollViewer>("TabScroller");
-            if (scroller != null)
-                scroller.Offset = new Vector(scroller.Offset.X + 150, 0);
+            if (DataContext is MainWindowViewModel vm && vm.ActiveWheelIndex < vm.Wheels.Count - 1)
+                vm.ActiveWheelIndex++;
+        }
+
+        private void ScrollSelectedTabIntoView()
+        {
+            Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+            {
+                if (DataContext is not MainWindowViewModel vm) return;
+                var tabList = this.FindControl<ListBox>("TabList");
+                tabList?.ScrollIntoView(vm.ActiveWheel);
+            }, Avalonia.Threading.DispatcherPriority.Loaded);
         }
 
         // ── Tab rename handlers ───────────────────────────────────────────────
