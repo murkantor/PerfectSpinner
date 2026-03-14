@@ -467,21 +467,34 @@ namespace GoldenSpinner.Controls
             }
 
             // ── Pass 3.5: Blackout overlay ────────────────────────────────────────
-            // Mode 1: after spin, solid black over every non-winner slice (hides fills + labels).
-            // Mode 2: during spin (no winner yet), solid black circle over the whole wheel.
-            if (blackoutMode == 1 && winnerIndex >= 0)
+            // Mode 1 (reveal winner only):
+            //   - No winner yet → entire wheel solid black.
+            //   - Winner decided → black out every non-winner slice; winner stays visible.
+            // Mode 2 (reveal all on win):
+            //   - No winner yet → entire wheel solid black.
+            //   - Winner decided → normal rendering, no overlay.
+            if (blackoutMode == 1)
             {
-                for (int i = 0; i < n; i++)
+                if (winnerIndex < 0)
                 {
-                    if (!isWinner[i])
+                    // Whole wheel black — nothing to reveal yet.
+                    ctx.DrawEllipse(Brushes.Black, null, center, radius, radius);
+                }
+                else
+                {
+                    // Black out every slice except the winner.
+                    for (int i = 0; i < n; i++)
                     {
-                        var geo = BuildSliceGeometry(center, radius,
-                            starts[i] + rotRad, ends[i] + rotRad, n == 1);
-                        ctx.DrawGeometry(Brushes.Black, null, geo);
+                        if (!isWinner[i])
+                        {
+                            var geo = BuildSliceGeometry(center, radius,
+                                starts[i] + rotRad, ends[i] + rotRad, n == 1);
+                            ctx.DrawGeometry(Brushes.Black, null, geo);
+                        }
                     }
                 }
             }
-            else if (blackoutMode == 2 && winnerIndex == -1)
+            else if (blackoutMode == 2 && winnerIndex < 0)
             {
                 ctx.DrawEllipse(Brushes.Black, null, center, radius, radius);
             }
