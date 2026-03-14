@@ -536,19 +536,30 @@ namespace GoldenSpinner.Controls
 
             // Determine which active slice is currently under the fixed pointer (12 o'clock).
             // The pointer sits at -π/2 in screen space; subtract rotRad to get wheel-frame angle.
-            IBrush dotBrush = new SolidColorBrush(Color.Parse("#E74C3C")); // fallback red
-            if (n > 0)
+            // When blackout is active the centre dot stays a fixed inverted-border colour
+            // so it doesn't reveal which slice is under the pointer.
+            // borderColorStyle 0 = white border → black dot; 1 = black border → white dot.
+            IBrush dotBrush;
+            if (blackoutMode > 0)
             {
-                double pAngle = -Math.PI / 2.0 - rotRad;
-                double span   = 2 * Math.PI;
-                double norm   = ((pAngle - starts[0]) % span + span) % span + starts[0];
-                for (int i = 0; i < n; i++)
+                dotBrush = borderColorStyle == 1 ? Brushes.White : Brushes.Black;
+            }
+            else
+            {
+                dotBrush = new SolidColorBrush(Color.Parse("#E74C3C")); // default red
+                if (n > 0)
                 {
-                    if (norm >= starts[i] && norm < ends[i])
+                    double pAngle = -Math.PI / 2.0 - rotRad;
+                    double span   = 2 * Math.PI;
+                    double norm   = ((pAngle - starts[0]) % span + span) % span + starts[0];
+                    for (int i = 0; i < n; i++)
                     {
-                        try { dotBrush = new SolidColorBrush(Color.Parse(active[i].ColorHex)); }
-                        catch { }
-                        break;
+                        if (norm >= starts[i] && norm < ends[i])
+                        {
+                            try { dotBrush = new SolidColorBrush(Color.Parse(active[i].ColorHex)); }
+                            catch { }
+                            break;
+                        }
                     }
                 }
             }
