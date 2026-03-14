@@ -100,6 +100,18 @@ namespace GoldenSpinner.Controls
         public static readonly StyledProperty<string?> ConfettiImagePathProperty =
             AvaloniaProperty.Register<SpinnerWheelControl, string?>(nameof(ConfettiImagePath));
 
+        /// <summary>0 = Mixed, 1 = Strips, 2 = Circles, 3 = Triangles, 4 = Stars.</summary>
+        public static readonly StyledProperty<int> ConfettiShapeModeProperty =
+            AvaloniaProperty.Register<SpinnerWheelControl, int>(nameof(ConfettiShapeMode), 0);
+
+        /// <summary>0 = Rainbow, 1 = Custom colour.</summary>
+        public static readonly StyledProperty<int> ConfettiColorModeProperty =
+            AvaloniaProperty.Register<SpinnerWheelControl, int>(nameof(ConfettiColorMode), 0);
+
+        /// <summary>CSS hex string used when ConfettiColorMode = 1.</summary>
+        public static readonly StyledProperty<string> ConfettiCustomColorProperty =
+            AvaloniaProperty.Register<SpinnerWheelControl, string>(nameof(ConfettiCustomColor), "#FFD700");
+
         // ── Property accessors ───────────────────────────────────────────────
 
         public ObservableCollection<WheelSliceViewModel>? Slices
@@ -210,6 +222,24 @@ namespace GoldenSpinner.Controls
             set => SetValue(ConfettiImagePathProperty, value);
         }
 
+        public int ConfettiShapeMode
+        {
+            get => GetValue(ConfettiShapeModeProperty);
+            set => SetValue(ConfettiShapeModeProperty, value);
+        }
+
+        public int ConfettiColorMode
+        {
+            get => GetValue(ConfettiColorModeProperty);
+            set => SetValue(ConfettiColorModeProperty, value);
+        }
+
+        public string ConfettiCustomColor
+        {
+            get => GetValue(ConfettiCustomColorProperty);
+            set => SetValue(ConfettiCustomColorProperty, value);
+        }
+
         // ── Constructor ───────────────────────────────────────────────────────
 
         public SpinnerWheelControl()
@@ -235,6 +265,52 @@ namespace GoldenSpinner.Controls
                 ShowPointerLabelProperty, BorderColorStyleProperty, BlackoutWheelModeProperty);
         }
 
+        // ── Unit geometries for confetti shapes ───────────────────────────────
+        // Built once at class load time; both are centred at the origin with radius 1.
+        // At render time they are scaled by drawSize/2 and translated to the particle centre.
+
+        private static readonly StreamGeometry UnitTriangle = BuildUnitTriangle();
+        private static readonly StreamGeometry UnitStar     = BuildUnitStar();
+
+        private static StreamGeometry BuildUnitTriangle()
+        {
+            // Equilateral triangle, circumradius = 1, pointing up.
+            const double r = 1.0;
+            double h = r * Math.Sqrt(3) / 2;
+            var geo = new StreamGeometry();
+            using (var gc = geo.Open())
+            {
+                gc.BeginFigure(new Point(0, -r), true);
+                gc.LineTo(new Point( h,  r * 0.5));
+                gc.LineTo(new Point(-h,  r * 0.5));
+                gc.EndFigure(true);
+            }
+            return geo;
+        }
+
+        private static StreamGeometry BuildUnitStar()
+        {
+            // 5-pointed star, outer radius = 1, inner radius ≈ 0.382 (golden ratio).
+            const double outerR = 1.0;
+            const double innerR = 0.382;
+            const int    points = 5;
+            var geo = new StreamGeometry();
+            using (var gc = geo.Open())
+            {
+                bool first = true;
+                for (int i = 0; i < points * 2; i++)
+                {
+                    double angle = i * Math.PI / points - Math.PI / 2;
+                    double r     = (i % 2 == 0) ? outerR : innerR;
+                    var    pt    = new Point(r * Math.Cos(angle), r * Math.Sin(angle));
+                    if (first) { gc.BeginFigure(pt, true); first = false; }
+                    else         gc.LineTo(pt);
+                }
+                gc.EndFigure(true);
+            }
+            return geo;
+        }
+
         // ── Confetti particle system ──────────────────────────────────────────
 
         private sealed class ConfettiParticle
@@ -247,7 +323,7 @@ namespace GoldenSpinner.Controls
             public double Age;              // seconds since spawn
             public double Lifetime;         // total lifetime seconds
             public Color  Color;
-            public int    Shape;            // 0 = elongated rect, 1 = circle
+            public int    Shape;            // 0 = strip, 1 = circle, 2 = triangle, 3 = star
         }
 
         private static readonly Color[] ConfettiColors =
@@ -260,11 +336,17 @@ namespace GoldenSpinner.Controls
         private readonly List<ConfettiParticle> _confettiParticles = new();
         private DispatcherTimer? _confettiTimer;
         private DateTimeOffset   _lastConfettiTick;
-        private Bitmap?          _confettiBitmap;
+        private Bitmap?          _confettiBitmap;      // single-frame (PNG/JPEG)
+        private readonly List<Bitmap> _confettiFrames      = new(); // GIF frames
+        private readonly List<int>    _confettiFrameDelays = new(); // ms per frame
+        private int    _confettiFrameIndex;
+        private double _confettiFrameAccumMs;
 
         private void SpawnConfetti()
         {
             _confettiParticles.Clear();
+            _confettiFrameIndex  = 0;
+            _confettiFrameAccumMs = 0;
             var rng = new Random();
 
             // We need the wheel radius at spawn time. Use a cached value; it will
@@ -272,6 +354,15 @@ namespace GoldenSpinner.Controls
             // Fall back to a reasonable default if not yet measured.
             var size   = Math.Min(Bounds.Width, Bounds.Height);
             var radius = (size > 0 ? size : 600) / 2.0 - 18;
+
+            int shapeMode = ConfettiShapeMode;
+            int colorMode = ConfettiColorMode;
+            Color customColor = Color.Parse("#FFD700");
+            if (colorMode == 1)
+            {
+                try { customColor = Color.Parse(ConfettiCustomColor); }
+                catch { customColor = Color.Parse("#FFD700"); }
+            }
 
             for (int i = 0; i < 120; i++)
             {
@@ -282,6 +373,20 @@ namespace GoldenSpinner.Controls
                 var lifetime  = 1.5 + rng.NextDouble() * 2.0;
                 var maxSpread = radius * (0.4 + rng.NextDouble() * 0.5);
                 var speed     = maxSpread / lifetime;
+
+                // Shape: Mixed picks randomly from all 4; specific mode forces one shape.
+                int shape = shapeMode switch
+                {
+                    1 => 0,          // Strips
+                    2 => 1,          // Circles
+                    3 => 2,          // Triangles
+                    4 => 3,          // Stars
+                    _ => rng.Next(4) // Mixed
+                };
+
+                Color color = colorMode == 1
+                    ? customColor
+                    : ConfettiColors[rng.Next(ConfettiColors.Length)];
 
                 _confettiParticles.Add(new ConfettiParticle
                 {
@@ -294,8 +399,8 @@ namespace GoldenSpinner.Controls
                     RotVelocity = (rng.NextDouble() - 0.5) * 720,
                     Age         = 0,
                     Lifetime    = lifetime,
-                    Color       = ConfettiColors[rng.Next(ConfettiColors.Length)],
-                    Shape       = rng.Next(2),
+                    Color       = color,
+                    Shape       = shape,
                 });
             }
 
@@ -312,7 +417,9 @@ namespace GoldenSpinner.Controls
         private void StopConfetti()
         {
             _confettiTimer?.Stop();
-            _confettiTimer = null;
+            _confettiTimer        = null;
+            _confettiFrameIndex   = 0;
+            _confettiFrameAccumMs = 0;
             _confettiParticles.Clear();
             InvalidateVisual();
         }
@@ -322,6 +429,20 @@ namespace GoldenSpinner.Controls
             var now = DateTimeOffset.UtcNow;
             var dt  = Math.Min((now - _lastConfettiTick).TotalSeconds, 0.05);
             _lastConfettiTick = now;
+
+            // Advance GIF frame when the current frame's delay has elapsed.
+            if (_confettiFrames.Count > 1)
+            {
+                _confettiFrameAccumMs += dt * 1000;
+                int frameDelay = _confettiFrameIndex < _confettiFrameDelays.Count
+                    ? _confettiFrameDelays[_confettiFrameIndex]
+                    : 100;
+                if (_confettiFrameAccumMs >= frameDelay)
+                {
+                    _confettiFrameAccumMs -= frameDelay;
+                    _confettiFrameIndex    = (_confettiFrameIndex + 1) % _confettiFrames.Count;
+                }
+            }
 
             bool anyAlive = false;
             foreach (var p in _confettiParticles)
@@ -346,12 +467,58 @@ namespace GoldenSpinner.Controls
 
         private void LoadConfettiBitmap()
         {
+            // Dispose all previous resources.
             _confettiBitmap?.Dispose();
             _confettiBitmap = null;
+            foreach (var f in _confettiFrames) f.Dispose();
+            _confettiFrames.Clear();
+            _confettiFrameDelays.Clear();
+            _confettiFrameIndex   = 0;
+            _confettiFrameAccumMs = 0;
+
             var path = ConfettiImagePath;
             if (string.IsNullOrEmpty(path) || !System.IO.File.Exists(path)) return;
-            try { _confettiBitmap = new Bitmap(path); }
+
+            try
+            {
+                if (path.EndsWith(".gif", StringComparison.OrdinalIgnoreCase))
+                    LoadGifFrames(path);
+                else
+                    _confettiBitmap = new Bitmap(path);
+            }
             catch { /* silently ignore bad paths */ }
+        }
+
+        private void LoadGifFrames(string path)
+        {
+            using var sysImg = System.Drawing.Image.FromFile(path);
+            var dim        = new System.Drawing.Imaging.FrameDimension(sysImg.FrameDimensionsList[0]);
+            int frameCount = sysImg.GetFrameCount(dim);
+
+            // Property 0x5100 = PropertyTagFrameDelay; values are in 1/100 s units.
+            int[]? rawDelays = null;
+            try
+            {
+                var prop = sysImg.GetPropertyItem(0x5100);
+                if (prop?.Value != null && prop.Value.Length >= frameCount * 4)
+                {
+                    rawDelays = new int[frameCount];
+                    for (int i = 0; i < frameCount; i++)
+                        rawDelays[i] = Math.Max(20, BitConverter.ToInt32(prop.Value, i * 4) * 10);
+                }
+            }
+            catch { }
+
+            for (int i = 0; i < frameCount; i++)
+            {
+                sysImg.SelectActiveFrame(dim, i);
+                using var copy = new System.Drawing.Bitmap(sysImg);
+                using var ms   = new System.IO.MemoryStream();
+                copy.Save(ms, System.Drawing.Imaging.ImageFormat.Png);
+                ms.Position = 0;
+                _confettiFrames.Add(new Bitmap(ms));
+                _confettiFrameDelays.Add(rawDelays?[i] ?? 100);
+            }
         }
 
         protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
@@ -361,6 +528,8 @@ namespace GoldenSpinner.Controls
             _confettiTimer = null;
             _confettiBitmap?.Dispose();
             _confettiBitmap = null;
+            foreach (var f in _confettiFrames) f.Dispose();
+            _confettiFrames.Clear();
         }
 
         // ── Property change tracking ─────────────────────────────────────────
@@ -708,6 +877,13 @@ namespace GoldenSpinner.Controls
             // The wheelClip already constrains every particle to the circle boundary.
             if (_confettiParticles.Count > 0)
             {
+                // Resolve which bitmap/frame to use (same for all particles each frame).
+                Bitmap? confettiBmp = null;
+                if (_confettiFrames.Count > 0)
+                    confettiBmp = _confettiFrames[Math.Clamp(_confettiFrameIndex, 0, _confettiFrames.Count - 1)];
+                else if (_confettiBitmap != null)
+                    confettiBmp = _confettiBitmap;
+
                 foreach (var p in _confettiParticles)
                 {
                     if (p.Age >= p.Lifetime) continue;
@@ -719,7 +895,7 @@ namespace GoldenSpinner.Controls
                     //   t=0.5 → height=1  (peak: closest to camera, largest)
                     //   t=1   → height=0  (landed, flat again, tiny)
                     // This gives the 3D rising-and-falling illusion in a top-down view.
-                    double height  = 4.0 * t * (1.0 - t);
+                    double height   = 4.0 * t * (1.0 - t);
                     double drawSize = p.BaseSize * height;
                     if (drawSize < 0.5) continue; // skip invisible particles
 
@@ -737,10 +913,10 @@ namespace GoldenSpinner.Controls
                     using var _o  = ctx.PushOpacity(opacity);
                     using var _tr = ctx.PushTransform(rot);
 
-                    if (_confettiBitmap != null)
+                    if (confettiBmp != null)
                     {
-                        // Custom image: draw the bitmap scaled to drawSize.
-                        ctx.DrawImage(_confettiBitmap,
+                        // Custom image (or animated GIF frame): draw scaled to drawSize.
+                        ctx.DrawImage(confettiBmp,
                             new Rect(px - drawSize / 2, py - drawSize / 2, drawSize, drawSize));
                     }
                     else
@@ -754,11 +930,21 @@ namespace GoldenSpinner.Controls
                             ctx.DrawRectangle(brush, null,
                                 new Rect(px - w / 2, py - h / 2, w, h));
                         }
-                        else
+                        else if (p.Shape == 1)
                         {
                             // Circle — confetti dot.
                             ctx.DrawEllipse(brush, null,
                                 new Point(px, py), drawSize * 0.4, drawSize * 0.4);
+                        }
+                        else
+                        {
+                            // Triangle (shape 2) or Star (shape 3).
+                            // UnitTriangle/UnitStar are centred at origin with radius 1.
+                            // Scale by drawSize/2 then translate to particle centre.
+                            var shapeMatrix = Matrix.CreateScale(drawSize / 2, drawSize / 2)
+                                            * Matrix.CreateTranslation(px, py);
+                            using var _sh = ctx.PushTransform(shapeMatrix);
+                            ctx.DrawGeometry(brush, null, p.Shape == 2 ? UnitTriangle : UnitStar);
                         }
                     }
                 }

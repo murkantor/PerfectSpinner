@@ -57,5 +57,10 @@ namespace GoldenSpinner.Models
         // Confetti
         public bool ShowConfetti { get; set; } = false;
         public string? ConfettiImagePath { get; set; }
+        /// <summary>0 = Mixed, 1 = Strips, 2 = Circles, 3 = Triangles, 4 = Stars.</summary>
+        public int ConfettiShapeMode { get; set; } = 0;
+        /// <summary>0 = Rainbow, 1 = Custom colour.</summary>
+        public int ConfettiColorMode { get; set; } = 0;
+        public string ConfettiCustomColor { get; set; } = "#FFD700";
     }
 }

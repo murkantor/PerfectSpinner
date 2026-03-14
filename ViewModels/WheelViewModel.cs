@@ -109,6 +109,15 @@ namespace GoldenSpinner.ViewModels
 
         [ObservableProperty] private bool _showConfetti = false;
         [ObservableProperty] private string? _confettiImagePath;
+        /// <summary>0 = Mixed, 1 = Strips, 2 = Circles, 3 = Triangles, 4 = Stars.</summary>
+        [ObservableProperty] private int _confettiShapeMode = 0;
+        /// <summary>0 = Rainbow, 1 = Custom colour.</summary>
+        [ObservableProperty]
+        [NotifyPropertyChangedFor(nameof(IsCustomConfettiColor))]
+        private int _confettiColorMode = 0;
+        [ObservableProperty] private string _confettiCustomColor = "#FFD700";
+
+        public bool IsCustomConfettiColor => ConfettiColorMode == 1;
 
         // ── Save/Load feedback ───────────────────────────────────────────────
 
@@ -601,6 +610,9 @@ namespace GoldenSpinner.ViewModels
             BlackoutWheelMode     = BlackoutWheelMode,
             ShowConfetti          = ShowConfetti,
             ConfettiImagePath     = string.IsNullOrEmpty(ConfettiImagePath) ? null : ConfettiImagePath,
+            ConfettiShapeMode     = ConfettiShapeMode,
+            ConfettiColorMode     = ConfettiColorMode,
+            ConfettiCustomColor   = ConfettiCustomColor,
             SpinStartSoundPath    = string.IsNullOrEmpty(SpinStartSoundPath) ? null : SpinStartSoundPath,
             TickSound1Path        = string.IsNullOrEmpty(TickSound1Path) ? null : TickSound1Path,
             TickSound2Path        = string.IsNullOrEmpty(TickSound2Path) ? null : TickSound2Path,
@@ -639,6 +651,9 @@ namespace GoldenSpinner.ViewModels
             BlackoutWheelMode     = Math.Clamp(layout.BlackoutWheelMode, 0, 2);
             ShowConfetti          = layout.ShowConfetti;
             ConfettiImagePath     = layout.ConfettiImagePath;
+            ConfettiShapeMode     = Math.Clamp(layout.ConfettiShapeMode, 0, 4);
+            ConfettiColorMode     = Math.Clamp(layout.ConfettiColorMode, 0, 1);
+            ConfettiCustomColor   = string.IsNullOrWhiteSpace(layout.ConfettiCustomColor) ? "#FFD700" : layout.ConfettiCustomColor;
             SpinStartSoundPath    = layout.SpinStartSoundPath;
             TickSound1Path        = layout.TickSound1Path;
             TickSound2Path        = layout.TickSound2Path;

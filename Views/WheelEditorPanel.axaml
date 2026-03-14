@@ -258,12 +258,59 @@
                             <Button Content="🖼  Browse Image…"
                                     Command="{Binding BrowseConfettiImageCommand}"
                                     Padding="8,4"
-                                    ToolTip.Tip="PNG / JPEG / GIF — GIF uses first frame" />
+                                    ToolTip.Tip="PNG / JPEG / GIF — GIF will animate during confetti" />
                             <Button Content="✕ Remove"
                                     Command="{Binding RemoveConfettiImageCommand}"
                                     Padding="8,4"
                                     IsVisible="{Binding ConfettiImagePath,
                                                 Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                        </StackPanel>
+
+                        <TextBlock Text="Shape:"
+                                   Margin="0,4,0,0"
+                                   IsVisible="{Binding ShowConfetti}" />
+                        <ComboBox SelectedIndex="{Binding ConfettiShapeMode}"
+                                  HorizontalAlignment="Stretch"
+                                  IsVisible="{Binding ShowConfetti}"
+                                  ToolTip.Tip="Shape of each confetti particle">
+                            <ComboBoxItem Content="Mixed (random)" />
+                            <ComboBoxItem Content="Strips" />
+                            <ComboBoxItem Content="Circles" />
+                            <ComboBoxItem Content="Triangles" />
+                            <ComboBoxItem Content="Stars" />
+                        </ComboBox>
+
+                        <TextBlock Text="Colour:"
+                                   Margin="0,4,0,0"
+                                   IsVisible="{Binding ShowConfetti}" />
+                        <ComboBox SelectedIndex="{Binding ConfettiColorMode}"
+                                  HorizontalAlignment="Stretch"
+                                  IsVisible="{Binding ShowConfetti}"
+                                  ToolTip.Tip="Colour scheme for confetti particles">
+                            <ComboBoxItem Content="Rainbow" />
+                            <ComboBoxItem Content="Custom colour" />
+                        </ComboBox>
+
+                        <StackPanel Orientation="Horizontal" Spacing="8"
+                                    IsVisible="{Binding IsCustomConfettiColor}"
+                                    Margin="0,4,0,0">
+                            <TextBox Text="{Binding ConfettiCustomColor}"
+                                     Watermark="#RRGGBB" Width="110" />
+                            <Button Padding="3" ToolTip.Tip="Pick confetti colour">
+                                <Border Width="32" Height="26" CornerRadius="3"
+                                        Background="{Binding ConfettiCustomColor,
+                                                     Converter={StaticResource HexColorToBrush}}"
+                                        BorderBrush="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                                        BorderThickness="1" />
+                                <Button.Flyout>
+                                    <Flyout Placement="Bottom">
+                                        <ColorView Color="{Binding ConfettiCustomColor,
+                                                           Mode=TwoWay,
+                                                           Converter={StaticResource ColorToHex}}"
+                                                   IsAlphaVisible="False" />
+                                    </Flyout>
+                                </Button.Flyout>
+                            </Button>
                         </StackPanel>
 
                     </StackPanel>

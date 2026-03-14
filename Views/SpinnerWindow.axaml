@@ -43,7 +43,10 @@
                 BorderColorStyle="{Binding ActiveWheel.BorderColorStyle}"
                 BlackoutWheelMode="{Binding ActiveWheel.BlackoutWheelMode}"
                 ShowConfetti="{Binding ActiveWheel.ShowConfetti}"
-                ConfettiImagePath="{Binding ActiveWheel.ConfettiImagePath}" />
+                ConfettiImagePath="{Binding ActiveWheel.ConfettiImagePath}"
+                ConfettiShapeMode="{Binding ActiveWheel.ConfettiShapeMode}"
+                ConfettiColorMode="{Binding ActiveWheel.ConfettiColorMode}"
+                ConfettiCustomColor="{Binding ActiveWheel.ConfettiCustomColor}" />
         </Viewbox>
 
         <!-- Winner banner -->
