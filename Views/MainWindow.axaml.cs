@@ -1,6 +1,12 @@
+using System.Collections.Specialized;
+using System.ComponentModel;
+using System.Linq;
 using System.Runtime.InteropServices;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
+using Avalonia.Interactivity;
+using Avalonia.VisualTree;
 using GoldenSpinner.Services;
 using GoldenSpinner.ViewModels;
 
@@ -41,15 +47,108 @@ namespace GoldenSpinner.Views
             _spinnerWindow.Closed += (_, _) => Close();
 
             // ── Mutual z-raise — clicking either window brings both to front ──
-            // We use SetWindowPos(SWP_NOACTIVATE) instead of Activate() so that
-            // focus never moves away from the clicked window mid-click.  This
-            // was the root cause of controls requiring multiple clicks: the old
-            // Activate() call stole focus before PointerReleased completed.
-            Activated             += (_, _) => BringToFrontNoActivate(_spinnerWindow);
+            Activated                += (_, _) => BringToFrontNoActivate(_spinnerWindow);
             _spinnerWindow.Activated += (_, _) => BringToFrontNoActivate(this);
 
             // ── Side-by-side centred layout on startup ────────────────────────
             Opened += (_, _) => PositionWindowsSideBySide();
+
+            // ── Tab rename: wire up existing wheels, then new ones ────────────
+            foreach (var wheel in vm.Wheels)
+                wheel.PropertyChanged += OnWheelPropertyChanged;
+
+            vm.Wheels.CollectionChanged += (_, e) =>
+            {
+                if (e.NewItems == null) return;
+                foreach (WheelViewModel wheel in e.NewItems)
+                {
+                    wheel.PropertyChanged += OnWheelPropertyChanged;
+                }
+                // Auto-scroll to reveal the newly added tab.
+                Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+                {
+                    var scroller = this.FindControl<ScrollViewer>("TabScroller");
+                    scroller?.ScrollToEnd();
+                }, Avalonia.Threading.DispatcherPriority.Loaded);
+            };
+
+            // Detect double-click on tab header TextBlocks.
+            this.AddHandler(PointerPressedEvent, OnTabHeaderPointerPressed, RoutingStrategies.Bubble);
+
+            // Commit on LostFocus (user clicks away) or Enter; cancel on Escape.
+            this.AddHandler(LostFocusEvent, OnRenameLostFocus, RoutingStrategies.Bubble);
+            this.AddHandler(KeyDownEvent,   OnRenameKeyDown,   RoutingStrategies.Tunnel);
+        }
+
+        // ── Scroll button handlers ────────────────────────────────────────────
+
+        private void OnScrollLeft(object? sender, RoutedEventArgs e)
+        {
+            var scroller = this.FindControl<ScrollViewer>("TabScroller");
+            if (scroller != null)
+                scroller.Offset = new Vector(System.Math.Max(0, scroller.Offset.X - 150), 0);
+        }
+
+        private void OnScrollRight(object? sender, RoutedEventArgs e)
+        {
+            var scroller = this.FindControl<ScrollViewer>("TabScroller");
+            if (scroller != null)
+                scroller.Offset = new Vector(scroller.Offset.X + 150, 0);
+        }
+
+        // ── Tab rename handlers ───────────────────────────────────────────────
+
+        private void OnTabHeaderPointerPressed(object? sender, PointerPressedEventArgs e)
+        {
+            if (e.ClickCount < 2) return;
+            if (e.Source is TextBlock { DataContext: WheelViewModel wheel } && !wheel.IsEditingName)
+                wheel.BeginRenameCommand.Execute(null);
+        }
+
+        private void OnWheelPropertyChanged(object? sender, PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName != nameof(WheelViewModel.IsEditingName)) return;
+            if (sender is not WheelViewModel { IsEditingName: true }) return;
+
+            // After the visual tree updates (TextBox becomes visible), focus it.
+            Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+            {
+                var tabList = this.FindControl<ListBox>("TabList");
+                var textBox = tabList?
+                    .GetVisualDescendants()
+                    .OfType<TextBox>()
+                    .FirstOrDefault(t => t.IsVisible);
+                textBox?.Focus();
+                textBox?.SelectAll();
+            });
+        }
+
+        private void OnRenameLostFocus(object? sender, RoutedEventArgs e)
+        {
+            if (e.Source is not TextBox) return;
+            if (DataContext is not MainWindowViewModel vm) return;
+            foreach (var wheel in vm.Wheels)
+                if (wheel.IsEditingName)
+                    wheel.CommitRenameCommand.Execute(null);
+        }
+
+        private void OnRenameKeyDown(object? sender, KeyEventArgs e)
+        {
+            if (DataContext is not MainWindowViewModel vm) return;
+            var editing = vm.Wheels.FirstOrDefault(w => w.IsEditingName);
+            if (editing == null) return;
+
+            switch (e.Key)
+            {
+                case Key.Enter:
+                    editing.CommitRenameCommand.Execute(null);
+                    e.Handled = true;
+                    break;
+                case Key.Escape:
+                    editing.CancelRenameCommand.Execute(null);
+                    e.Handled = true;
+                    break;
+            }
         }
 
         // ── Win32 z-order helper ──────────────────────────────────────────────
@@ -61,7 +160,7 @@ namespace GoldenSpinner.Views
 
         private const uint SWP_NOMOVE     = 0x0002;
         private const uint SWP_NOSIZE     = 0x0001;
-        private const uint SWP_NOACTIVATE = 0x0010;  // bring to top without stealing focus
+        private const uint SWP_NOACTIVATE = 0x0010;
 
         private static void BringToFrontNoActivate(Window window)
         {
@@ -73,31 +172,25 @@ namespace GoldenSpinner.Views
 
         // ── Initial layout ────────────────────────────────────────────────────
 
-        /// <summary>
-        /// Places the Settings window on the left and the SpinnerWindow on the
-        /// right, with the pair centred on the primary display's work area.
-        /// </summary>
         private void PositionWindowsSideBySide()
         {
             var screen = Screens.Primary;
             if (screen == null) return;
 
             var scale    = screen.Scaling;
-            var workArea = screen.WorkingArea;   // physical pixels
+            var workArea = screen.WorkingArea;
 
-            // Convert logical window sizes to physical pixels.
             var settingsW = (int)(Width  * scale);
             var settingsH = (int)(Height * scale);
             var spinnerW  = (int)(_spinnerWindow.Width  * scale);
             var spinnerH  = (int)(_spinnerWindow.Height * scale);
 
-            const int gap = 16; // physical pixels between the two windows
+            const int gap = 16;
 
             var startX  = workArea.X + (workArea.Width - settingsW - spinnerW - gap) / 2;
             var centerY = workArea.Y +  workArea.Height / 2;
 
-            // Settings on the left, Spinner on the right, both vertically centred.
-            Position                = new PixelPoint(startX,                  centerY - settingsH / 2);
+            Position                = new PixelPoint(startX,                   centerY - settingsH / 2);
             _spinnerWindow.Position = new PixelPoint(startX + settingsW + gap, centerY - spinnerH  / 2);
         }
     }

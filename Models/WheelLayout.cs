@@ -20,6 +20,7 @@ namespace GoldenSpinner.Models
         // Appearance
         public int SliceImageMode { get; set; } = 0;
         public bool ShowLabels { get; set; } = true;
+        public bool ShowPointerLabel { get; set; } = false;
         public int LabelFontIndex { get; set; } = 0;
         public double LabelFontSize { get; set; } = 0;
         public int LabelColorStyle { get; set; } = 0;
@@ -34,6 +35,14 @@ namespace GoldenSpinner.Models
 
         // Logging
         public bool LogSpins { get; set; } = true;
+
+        // Border
+        public int BorderColorStyle { get; set; } = 0; // 0 = white, 1 = black
+
+        // Sounds
+        public string? SpinStartSoundPath { get; set; }
+        public string? TickSound1Path { get; set; }
+        public string? TickSound2Path { get; set; }
 
         // Winner display
         public string WinnerMessageTemplate { get; set; } = "🎉  %t%!";

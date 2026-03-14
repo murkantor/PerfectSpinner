@@ -23,7 +23,7 @@ namespace GoldenSpinner.Services
 
         private readonly string _logDir;
 
-        public async Task AppendSpinResultAsync(decimal speed, int friction, string result)
+        public async Task AppendSpinResultAsync(decimal speed, int friction, double cruiseDuration, string result)
         {
             Directory.CreateDirectory(_logDir);
 
@@ -37,7 +37,7 @@ namespace GoldenSpinner.Services
             }
 
             var now = DateTime.Now;
-            var line = $"{now:yyyy-MM-dd} | {now:HH:mm:ss} | {speed:F1} | {friction} | {result}";
+            var line = $"{now:yyyy-MM-dd} | {now:HH:mm:ss} | {speed,4:F1} | {friction,2} | {cruiseDuration:F1} | {result}";
             await File.AppendAllTextAsync(_logFile, line + Environment.NewLine);
         }
     }

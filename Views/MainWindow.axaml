@@ -15,35 +15,75 @@
 
     <DockPanel Margin="12">
 
-        <!-- ── Header (always visible) ───────────────────────────────── -->
+        <!-- ── Header ──────────────────────────────────────────────────── -->
         <StackPanel DockPanel.Dock="Top" Spacing="6" Margin="0,0,0,8">
             <TextBlock Text="SpinnerWheel" FontSize="20" FontWeight="Bold" />
             <Separator />
         </StackPanel>
 
-        <!-- ── Tab control — one tab per wheel ───────────────────────── -->
+        <!-- ── Custom scrollable tab bar ───────────────────────────────── -->
         <!--
-            ItemsSource drives both tabs from the Wheels list.
-            ContentTemplate sets DataContext = WheelViewModel for each tab,
-            which WheelEditorPanel consumes via its own x:DataType binding context.
-            SelectedIndex syncs with ActiveWheelIndex so the SpinnerWindow follows.
+            Layout: [◀]  [scrollable list of wheel tabs]  [▶]  [+]
+            The ListBox uses a horizontal StackPanel as its items panel.
+            The outer ScrollViewer hides the scrollbar; ◀ / ▶ buttons scroll it.
         -->
-        <TabControl ItemsSource="{Binding Wheels}"
-                    SelectedIndex="{Binding ActiveWheelIndex}">
+        <Grid DockPanel.Dock="Top"
+              ColumnDefinitions="Auto,*,Auto,Auto"
+              Margin="0,0,0,4">
 
-            <TabControl.ItemTemplate>
-                <DataTemplate x:DataType="vm:WheelViewModel">
-                    <TextBlock Text="{Binding Name}" />
-                </DataTemplate>
-            </TabControl.ItemTemplate>
+            <Button Grid.Column="0" Content="◀" Click="OnScrollLeft"
+                    Padding="6,4" VerticalAlignment="Stretch"
+                    ToolTip.Tip="Scroll tabs left" />
 
-            <TabControl.ContentTemplate>
+            <ScrollViewer Grid.Column="1" x:Name="TabScroller"
+                          HorizontalScrollBarVisibility="Hidden"
+                          VerticalScrollBarVisibility="Disabled">
+                <ListBox x:Name="TabList"
+                         ItemsSource="{Binding Wheels}"
+                         SelectedIndex="{Binding ActiveWheelIndex, Mode=TwoWay}"
+                         BorderThickness="0" Background="Transparent"
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                         ScrollViewer.VerticalScrollBarVisibility="Disabled">
+                    <ListBox.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <StackPanel Orientation="Horizontal" />
+                        </ItemsPanelTemplate>
+                    </ListBox.ItemsPanel>
+                    <ListBox.ItemTemplate>
+                        <DataTemplate x:DataType="vm:WheelViewModel">
+                            <Panel MinWidth="70" Margin="2,0">
+                                <!-- Display: double-click (handled in code-behind) starts rename -->
+                                <TextBlock Text="{Binding Name}"
+                                           IsVisible="{Binding !IsEditingName}"
+                                           VerticalAlignment="Center" />
+                                <!-- Edit: visible while renaming -->
+                                <TextBox Text="{Binding Name}"
+                                         IsVisible="{Binding IsEditingName}"
+                                         MinWidth="80" Padding="2,0" />
+                            </Panel>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </ScrollViewer>
+
+            <Button Grid.Column="2" Content="▶" Click="OnScrollRight"
+                    Padding="6,4" VerticalAlignment="Stretch"
+                    ToolTip.Tip="Scroll tabs right" />
+
+            <Button Grid.Column="3" Content="+" Command="{Binding AddWheelCommand}"
+                    ToolTip.Tip="Add new wheel"
+                    Padding="8,4" Margin="6,0,0,0" VerticalAlignment="Stretch" />
+
+        </Grid>
+
+        <!-- ── Active wheel editor ──────────────────────────────────────── -->
+        <ContentControl Content="{Binding ActiveWheel}">
+            <ContentControl.ContentTemplate>
                 <DataTemplate x:DataType="vm:WheelViewModel">
                     <views:WheelEditorPanel />
                 </DataTemplate>
-            </TabControl.ContentTemplate>
-
-        </TabControl>
+            </ContentControl.ContentTemplate>
+        </ContentControl>
 
     </DockPanel>
 

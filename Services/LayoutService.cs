@@ -81,31 +81,43 @@ namespace GoldenSpinner.Services
             {
                 zipSlices.Add(new WheelSlice
                 {
-                    Id        = slice.Id,
-                    Label     = slice.Label,
-                    ColorHex  = slice.ColorHex,
-                    Weight    = slice.Weight,
-                    IsActive  = slice.IsActive,
-                    ImagePath = AssignEntry(slice.ImagePath, "img", imageMap),
-                    SoundPath = AssignEntry(slice.SoundPath, "snd", soundMap),
+                    Id          = slice.Id,
+                    Label       = slice.Label,
+                    ColorHex    = slice.ColorHex,
+                    Weight      = slice.Weight,
+                    IsActive    = slice.IsActive,
+                    WinnerLabel = slice.WinnerLabel,
+                    ImagePath   = AssignEntry(slice.ImagePath, "img", imageMap),
+                    SoundPath   = AssignEntry(slice.SoundPath, "snd", soundMap),
                 });
             }
 
             var zipLayout = new WheelLayout
             {
-                Name                = layout.Name,
-                Slices              = zipSlices,
-                SpinDurationSeconds = layout.SpinDurationSeconds,
-                Friction            = layout.Friction,
-                SliceImageMode      = layout.SliceImageMode,
-                ShowLabels          = layout.ShowLabels,
-                LabelFontIndex      = layout.LabelFontIndex,
-                LabelFontSize       = layout.LabelFontSize,
-                LabelColorStyle     = layout.LabelColorStyle,
-                LabelBold           = layout.LabelBold,
-                ChromaKeyColor      = layout.ChromaKeyColor,
-                UseWeightedSlices   = layout.UseWeightedSlices,
-                GlobalWeight        = layout.GlobalWeight,
+                Name                  = layout.Name,
+                Slices                = zipSlices,
+                SpinDurationSeconds   = layout.SpinDurationSeconds,
+                Friction              = layout.Friction,
+                SliceImageMode        = layout.SliceImageMode,
+                ShowLabels            = layout.ShowLabels,
+                ShowPointerLabel      = layout.ShowPointerLabel,
+                LabelFontIndex        = layout.LabelFontIndex,
+                LabelFontSize         = layout.LabelFontSize,
+                LabelColorStyle       = layout.LabelColorStyle,
+                LabelBold             = layout.LabelBold,
+                ChromaKeyColor        = layout.ChromaKeyColor,
+                UseWeightedSlices     = layout.UseWeightedSlices,
+                GlobalWeight          = layout.GlobalWeight,
+                LogSpins              = layout.LogSpins,
+                WinnerMessageTemplate = layout.WinnerMessageTemplate,
+                DefaultSoundPath      = AssignEntry(layout.DefaultSoundPath, "snd", soundMap),
+                BrightenWinner        = layout.BrightenWinner,
+                DarkenLosers          = layout.DarkenLosers,
+                InvertLoserText       = layout.InvertLoserText,
+                BorderColorStyle      = layout.BorderColorStyle,
+                SpinStartSoundPath    = AssignEntry(layout.SpinStartSoundPath, "snd", soundMap),
+                TickSound1Path        = AssignEntry(layout.TickSound1Path, "snd", soundMap),
+                TickSound2Path        = AssignEntry(layout.TickSound2Path, "snd", soundMap),
             };
 
             await using var zipStream = new FileStream(filePath, FileMode.Create, FileAccess.Write);
@@ -157,6 +169,10 @@ namespace GoldenSpinner.Services
                     slice.ImagePath = ResolveAsset(tempDir, slice.ImagePath);
                     slice.SoundPath = ResolveAsset(tempDir, slice.SoundPath);
                 }
+                layout.DefaultSoundPath    = ResolveAsset(tempDir, layout.DefaultSoundPath);
+                layout.SpinStartSoundPath  = ResolveAsset(tempDir, layout.SpinStartSoundPath);
+                layout.TickSound1Path      = ResolveAsset(tempDir, layout.TickSound1Path);
+                layout.TickSound2Path      = ResolveAsset(tempDir, layout.TickSound2Path);
 
                 return layout;
             }

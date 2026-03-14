@@ -92,7 +92,7 @@
                                       VerticalAlignment="Center" />
                         </StackPanel>
 
-                        <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto" RowSpacing="6">
+                        <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="6">
                             <TextBlock Grid.Row="0" Grid.Column="0"
                                        Text="Font:" VerticalAlignment="Center" Margin="0,0,10,0" />
                             <ComboBox Grid.Row="0" Grid.Column="1"
@@ -115,6 +115,16 @@
                                       HorizontalAlignment="Stretch">
                                 <ComboBoxItem Content="White with black border" />
                                 <ComboBoxItem Content="Black with white border" />
+                            </ComboBox>
+
+                            <TextBlock Grid.Row="3" Grid.Column="0"
+                                       Text="Borders:" VerticalAlignment="Center" Margin="0,0,10,0" />
+                            <ComboBox Grid.Row="3" Grid.Column="1"
+                                      SelectedIndex="{Binding BorderColorStyle}"
+                                      HorizontalAlignment="Stretch"
+                                      ToolTip.Tip="Colour of the outer ring and slice dividers">
+                                <ComboBoxItem Content="White" />
+                                <ComboBoxItem Content="Black" />
                             </ComboBox>
                         </Grid>
 
@@ -162,7 +172,7 @@
                                    FontSize="11" TextWrapping="Wrap"
                                    Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
 
-                        <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="6">
+                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="6">
                             <TextBlock Grid.Column="0" Text="Default:"
                                        VerticalAlignment="Center" />
                             <NumericUpDown Grid.Column="1"
@@ -170,12 +180,8 @@
                                            Minimum="1" Maximum="100" Increment="1"
                                            FormatString="F0" />
                             <Button Grid.Column="2"
-                                    Content="Apply to All"
+                                    Content="Apply"
                                     Command="{Binding ApplyWeightToAllCommand}"
-                                    Padding="8,4" />
-                            <Button Grid.Column="3"
-                                    Content="Undo"
-                                    Command="{Binding UndoWeightCommand}"
                                     Padding="8,4" />
                         </Grid>
 
@@ -221,6 +227,70 @@
                     </StackPanel>
                 </Expander>
 
+                <!-- ── Sounds expander ───────────────────────────────── -->
+                <Expander Header="Sounds" IsExpanded="False" HorizontalAlignment="Stretch">
+                    <StackPanel Spacing="8" Margin="0,6,0,0">
+
+                        <TextBlock Text="Spin Start Sound:" FontWeight="SemiBold" />
+                        <TextBlock Text="{Binding SpinStartSoundPath}"
+                                   FontSize="11" TextTrimming="CharacterEllipsis"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                                   IsVisible="{Binding SpinStartSoundPath,
+                                               Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                        <StackPanel Orientation="Horizontal" Spacing="4">
+                            <Button Content="🔊  Browse Sound…"
+                                    Command="{Binding BrowseSpinStartSoundCommand}"
+                                    Padding="8,4" />
+                            <Button Content="✕ Remove"
+                                    Command="{Binding RemoveSpinStartSoundCommand}"
+                                    Padding="8,4"
+                                    IsVisible="{Binding SpinStartSoundPath,
+                                                Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                        </StackPanel>
+
+                        <Separator Margin="0,2,0,2" />
+
+                        <TextBlock Text="Two sounds that alternate each time the pointer crosses a slice border."
+                                   FontSize="11" TextWrapping="Wrap"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+
+                        <TextBlock Text="Tick Sound 1:" Margin="0,4,0,0" />
+                        <TextBlock Text="{Binding TickSound1Path}"
+                                   FontSize="11" TextTrimming="CharacterEllipsis"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                                   IsVisible="{Binding TickSound1Path,
+                                               Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                        <StackPanel Orientation="Horizontal" Spacing="4">
+                            <Button Content="🔊  Browse Sound…"
+                                    Command="{Binding BrowseTickSound1Command}"
+                                    Padding="8,4" />
+                            <Button Content="✕ Remove"
+                                    Command="{Binding RemoveTickSound1Command}"
+                                    Padding="8,4"
+                                    IsVisible="{Binding TickSound1Path,
+                                                Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                        </StackPanel>
+
+                        <TextBlock Text="Tick Sound 2:" Margin="0,4,0,0" />
+                        <TextBlock Text="{Binding TickSound2Path}"
+                                   FontSize="11" TextTrimming="CharacterEllipsis"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                                   IsVisible="{Binding TickSound2Path,
+                                               Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                        <StackPanel Orientation="Horizontal" Spacing="4">
+                            <Button Content="🔊  Browse Sound…"
+                                    Command="{Binding BrowseTickSound2Command}"
+                                    Padding="8,4" />
+                            <Button Content="✕ Remove"
+                                    Command="{Binding RemoveTickSound2Command}"
+                                    Padding="8,4"
+                                    IsVisible="{Binding TickSound2Path,
+                                                Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                        </StackPanel>
+
+                    </StackPanel>
+                </Expander>
+
                 <!-- ── Layout expander ────────────────────────────────── -->
                 <Expander Header="Layout" IsExpanded="False" HorizontalAlignment="Stretch">
                     <StackPanel Spacing="8" Margin="0,6,0,0">
@@ -228,6 +298,10 @@
                             <Button Content="💾  Save" Command="{Binding SaveLayoutCommand}" Padding="12,6" />
                             <Button Content="📂  Load" Command="{Binding LoadLayoutCommand}" Padding="12,6" />
                         </StackPanel>
+                        <TextBlock Text="{Binding SaveError}"
+                                   Foreground="Red" FontSize="11" TextWrapping="Wrap"
+                                   IsVisible="{Binding SaveError,
+                                               Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                         <CheckBox IsChecked="{Binding LogSpins}"
                                   Content="Log spins to file (./logs/spins.log)" />
                     </StackPanel>

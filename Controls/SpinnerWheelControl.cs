@@ -79,6 +79,14 @@ namespace GoldenSpinner.Controls
         public static readonly StyledProperty<bool> InvertLoserTextProperty =
             AvaloniaProperty.Register<SpinnerWheelControl, bool>(nameof(InvertLoserText), false);
 
+        /// <summary>0 = white borders (outer ring + slice dividers). 1 = black.</summary>
+        public static readonly StyledProperty<int> BorderColorStyleProperty =
+            AvaloniaProperty.Register<SpinnerWheelControl, int>(nameof(BorderColorStyle), 0);
+
+        /// <summary>When true, the label of the slice currently under the pointer is shown near the top of the wheel.</summary>
+        public static readonly StyledProperty<bool> ShowPointerLabelProperty =
+            AvaloniaProperty.Register<SpinnerWheelControl, bool>(nameof(ShowPointerLabel), false);
+
         // ── Property accessors ───────────────────────────────────────────────
 
         public ObservableCollection<WheelSliceViewModel>? Slices
@@ -159,6 +167,18 @@ namespace GoldenSpinner.Controls
             set => SetValue(InvertLoserTextProperty, value);
         }
 
+        public int BorderColorStyle
+        {
+            get => GetValue(BorderColorStyleProperty);
+            set => SetValue(BorderColorStyleProperty, value);
+        }
+
+        public bool ShowPointerLabel
+        {
+            get => GetValue(ShowPointerLabelProperty);
+            set => SetValue(ShowPointerLabelProperty, value);
+        }
+
         // ── Constructor ───────────────────────────────────────────────────────
 
         public SpinnerWheelControl()
@@ -180,7 +200,8 @@ namespace GoldenSpinner.Controls
                 UseWeightedSlicesProperty, SliceImageModeProperty,
                 ShowLabelsProperty, LabelFontFamilyProperty,
                 LabelFontSizeProperty, LabelColorStyleProperty, LabelBoldProperty,
-                BrightenWinnerProperty, DarkenLosersProperty, InvertLoserTextProperty);
+                BrightenWinnerProperty, DarkenLosersProperty, InvertLoserTextProperty,
+                ShowPointerLabelProperty, BorderColorStyleProperty);
         }
 
         // ── Property change tracking ─────────────────────────────────────────
@@ -248,25 +269,29 @@ namespace GoldenSpinner.Controls
 
             if (active.Count == 0)
             {
+                IBrush emptyBorderBrush = BorderColorStyle == 1 ? Brushes.Black : Brushes.White;
                 DrawEmptyWheel(ctx, center, radius);
-                DrawOuterRing(ctx, center, radius);
+                DrawOuterRing(ctx, center, radius, emptyBorderBrush);
                 DrawPointer(ctx, center, radius);
-                DrawCenterPin(ctx, center);
+                DrawCenterPin(ctx, center, emptyBorderBrush, new SolidColorBrush(Color.Parse("#E74C3C")));
                 return;
             }
 
             bool   useWeighted = UseWeightedSlices;
             double totalWeight = useWeighted ? active.Sum(s => Math.Max(1.0, s.Weight)) : active.Count;
             int    n           = active.Count;
-            int    imageMode       = SliceImageMode;
-            bool   showLabels      = ShowLabels;
-            string labelFont       = LabelFontFamily;
-            double labelFontSize   = LabelFontSize;
-            int    labelColorStyle = LabelColorStyle;
-            bool   labelBold       = LabelBold;
-            bool   brightenWinner  = BrightenWinner;
-            bool   darkenLosers    = DarkenLosers;
-            bool   invertLoserText = InvertLoserText;
+            int    imageMode        = SliceImageMode;
+            bool   showLabels       = ShowLabels;
+            string labelFont        = LabelFontFamily;
+            double labelFontSize    = LabelFontSize;
+            int    labelColorStyle  = LabelColorStyle;
+            bool   labelBold        = LabelBold;
+            bool   brightenWinner   = BrightenWinner;
+            bool   darkenLosers     = DarkenLosers;
+            bool   invertLoserText  = InvertLoserText;
+            bool   showPointerLabel = ShowPointerLabel;
+            int    borderColorStyle = BorderColorStyle;
+            IBrush borderBrush      = borderColorStyle == 1 ? Brushes.Black : Brushes.White;
 
             // Pre-compute per-slice angles.
             var starts   = new double[n];
@@ -332,34 +357,32 @@ namespace GoldenSpinner.Controls
                         imageCenter = center;
                     }
 
+                    // Fill with border colour first so any area the image doesn't reach
+                    // shows the border colour rather than the chroma key background.
+                    ctx.DrawGeometry(borderBrush, null, screenGeo);
                     using (ctx.PushGeometryClip(screenGeo))
                         DrawCoverImage(ctx, bmp, imageCenter, radius);
                 }
             }
 
-            // ── Pass 2: Rotating fills, borders, labels (+ images in Rotating mode) ──
+            // ── Pass 2a: Rotating fills and images (antialiased, no borders) ────
             using (ctx.PushTransform(rotMatrix))
             {
-                var borderPen = new Pen(Brushes.White, 2);
-                var winnerPen = new Pen(new SolidColorBrush(Color.Parse("#FFD700")), 4);
-
                 for (int i = 0; i < n; i++)
                 {
-                    var slice    = active[i];
-                    var pen      = isWinner[i] ? winnerPen : borderPen;
-                    var geo      = BuildSliceGeometry(center, radius, starts[i], ends[i], n == 1);
-                    var midAngle = (starts[i] + ends[i]) / 2;
+                    var slice = active[i];
+                    var geo   = BuildSliceGeometry(center, radius, starts[i], ends[i], n == 1);
 
                     if (slice.LoadedBitmap is Bitmap bmp)
                     {
                         if (imageMode == 1)
                         {
-                            // Rotating: image is inside the rotation transform — pivots with slice.
+                            // Fill with border colour behind the rotating image for the same reason.
+                            ctx.DrawGeometry(borderBrush, null, geo);
                             using (ctx.PushGeometryClip(geo))
                                 DrawCoverImage(ctx, bmp, center, radius);
                         }
-                        // Border only; image (from Pass 1 or above) shows through.
-                        ctx.DrawGeometry(Brushes.Transparent, pen, geo);
+                        // Mode 0/2: fill + image already handled in Pass 1.
                     }
                     else
                     {
@@ -371,9 +394,24 @@ namespace GoldenSpinner.Controls
                             ? new SolidColorBrush(Lighten(color, 0.2f))
                             : new SolidColorBrush(color);
 
-                        ctx.DrawGeometry(fill, pen, geo);
+                        ctx.DrawGeometry(fill, null, geo); // no border pen — drawn separately below
                     }
+                }
+            }
 
+            // ── Pass 2b: Borders only (aliased — hard crisp lines) ───────────
+            // Nested PushRenderOptions overrides the outer Antialias for border drawing only.
+            using (ctx.PushRenderOptions(new RenderOptions { EdgeMode = EdgeMode.Aliased }))
+            using (ctx.PushTransform(rotMatrix))
+            {
+                var slicePen  = new Pen(borderBrush, 2);
+                var winnerPen = new Pen(new SolidColorBrush(Color.Parse("#FFD700")), 4);
+
+                for (int i = 0; i < n; i++)
+                {
+                    var pen = isWinner[i] ? winnerPen : slicePen;
+                    var geo = BuildSliceGeometry(center, radius, starts[i], ends[i], n == 1);
+                    ctx.DrawGeometry(Brushes.Transparent, pen, geo);
                 }
             }
 
@@ -417,13 +455,63 @@ namespace GoldenSpinner.Controls
                 }
             }
 
+            // ── Pass 4: Pointer label — slice name just inside the top edge ──────
+            // Drawn inside the wheel clip so it can't overflow the circle boundary.
+            // Position is 28 px below the wheel's top edge (pointer tip is at +2 px).
+            if (showPointerLabel && n > 0)
+            {
+                // Find which active slice is currently under the fixed pointer (12 o'clock).
+                // In the unrotated wheel frame the pointer sits at -PI/2.
+                // Normalise into [starts[0], starts[0] + 2*PI).
+                double pAngle = -Math.PI / 2.0 - rotRad;
+                double span   = 2 * Math.PI;
+                double norm   = ((pAngle - starts[0]) % span + span) % span + starts[0];
+
+                string? pLabel = null;
+                for (int i = 0; i < n; i++)
+                {
+                    if (norm >= starts[i] && norm < ends[i])
+                    {
+                        pLabel = active[i].Label;
+                        break;
+                    }
+                }
+
+                if (!string.IsNullOrEmpty(pLabel))
+                {
+                    var labelPos = new Point(center.X, center.Y - radius + 28);
+                    DrawSliceLabel(ctx, pLabel, labelPos, n,
+                        labelFont, labelFontSize, labelColorStyle, labelBold);
+                }
+            }
+
             } // end wheel clip + antialias push
 
             // ── Fixed layer — drawn outside the clip with hard edges ──────────
             // These sit on the chroma key boundary so they must remain pixel-hard.
-            DrawOuterRing(ctx, center, radius);
+
+            // Determine which active slice is currently under the fixed pointer (12 o'clock).
+            // The pointer sits at -π/2 in screen space; subtract rotRad to get wheel-frame angle.
+            IBrush dotBrush = new SolidColorBrush(Color.Parse("#E74C3C")); // fallback red
+            if (n > 0)
+            {
+                double pAngle = -Math.PI / 2.0 - rotRad;
+                double span   = 2 * Math.PI;
+                double norm   = ((pAngle - starts[0]) % span + span) % span + starts[0];
+                for (int i = 0; i < n; i++)
+                {
+                    if (norm >= starts[i] && norm < ends[i])
+                    {
+                        try { dotBrush = new SolidColorBrush(Color.Parse(active[i].ColorHex)); }
+                        catch { }
+                        break;
+                    }
+                }
+            }
+
+            DrawOuterRing(ctx, center, radius, borderBrush);
             DrawPointer(ctx, center, radius);
-            DrawCenterPin(ctx, center);
+            DrawCenterPin(ctx, center, borderBrush, dotBrush);
         }
 
         // ── Geometry helper ───────────────────────────────────────────────────
@@ -526,10 +614,9 @@ namespace GoldenSpinner.Controls
 
         // ── Fixed decorations ─────────────────────────────────────────────────
 
-        private static void DrawOuterRing(DrawingContext ctx, Point center, double radius)
+        private static void DrawOuterRing(DrawingContext ctx, Point center, double radius, IBrush color)
         {
-            ctx.DrawEllipse(null, new Pen(new SolidColorBrush(Color.Parse("#444444")), 3),
-                center, radius, radius);
+            ctx.DrawEllipse(null, new Pen(color, 3), center, radius, radius);
         }
 
         private static void DrawPointer(DrawingContext ctx, Point center, double radius)
@@ -555,10 +642,10 @@ namespace GoldenSpinner.Controls
                 geo);
         }
 
-        private static void DrawCenterPin(DrawingContext ctx, Point center)
+        private static void DrawCenterPin(DrawingContext ctx, Point center, IBrush borderBrush, IBrush dotBrush)
         {
-            ctx.DrawEllipse(Brushes.White, new Pen(Brushes.LightGray, 1.5), center, 14, 14);
-            ctx.DrawEllipse(new SolidColorBrush(Color.Parse("#E74C3C")), null, center, 7, 7);
+            ctx.DrawEllipse(borderBrush, null, center, 14, 14);
+            ctx.DrawEllipse(dotBrush, null, center, 7, 7);
         }
 
         private static void DrawEmptyWheel(DrawingContext ctx, Point center, double radius)

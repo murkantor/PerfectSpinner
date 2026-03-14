@@ -32,13 +32,15 @@
                 UseWeightedSlices="{Binding ActiveWheel.UseWeightedSlices}"
                 SliceImageMode="{Binding ActiveWheel.SliceImageMode}"
                 ShowLabels="{Binding ActiveWheel.ShowLabels}"
+                ShowPointerLabel="{Binding ActiveWheel.ShowPointerLabel}"
                 LabelFontFamily="{Binding ActiveWheel.LabelFontFamily}"
                 LabelFontSize="{Binding ActiveWheel.LabelFontSize}"
                 LabelColorStyle="{Binding ActiveWheel.LabelColorStyle}"
                 LabelBold="{Binding ActiveWheel.LabelBold}"
                 BrightenWinner="{Binding ActiveWheel.BrightenWinner}"
                 DarkenLosers="{Binding ActiveWheel.DarkenLosers}"
-                InvertLoserText="{Binding ActiveWheel.InvertLoserText}" />
+                InvertLoserText="{Binding ActiveWheel.InvertLoserText}"
+                BorderColorStyle="{Binding ActiveWheel.BorderColorStyle}" />
         </Viewbox>
 
         <!-- Winner banner -->
