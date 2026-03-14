@@ -64,14 +64,17 @@ Services created in `MainWindow.axaml.cs` (needs `this` for `WindowFilePickerSer
 
 Thin container owning an **unbounded** list of wheels. Users add wheels with the `+` button.
 
-| Property | Type | Purpose |
-|----------|------|---------|
+| Property/Method | Type | Purpose |
+|----------------|------|---------|
 | `Wheels` | `ObservableCollection<WheelViewModel>` | All wheels; bound to `TabList` ListBox |
 | `ActiveWheelIndex` | `int` | Selected tab index; guarded against -1 (ListBox deselection artefact) |
 | `ActiveWheel` | `WheelViewModel` (computed) | `Wheels[Clamp(ActiveWheelIndex, 0, Count-1)]` |
 | `AddWheelCommand` | `IRelayCommand` | Adds `"Wheel N"` and selects it |
+| `CloneWheel(source)` | `void` | Deep-copies source via `ToLayout()`/`ApplyLayout()`, names clone with `(2)` suffix, inserts after source, selects it |
+| `DeleteWheel(wheel)` | `void` | Removes wheel; if last, adds a blank "Wheel 1"; adjusts `ActiveWheelIndex` |
+| `GenerateCloneName(name)` | `string` | Strips existing `(N)` suffix via `Regex.Replace`, appends next available `(N)` |
 
-Stores all four services as fields so `AddWheelCommand` can create new `WheelViewModel` instances.
+Stores all four services as fields so `AddWheelCommand` and `CloneWheel` can create new `WheelViewModel` instances.
 
 ### `MainWindow.axaml`
 
@@ -85,15 +88,35 @@ DockPanel
 ```
 
 - `ListBox x:Name="TabList"` — horizontal `StackPanel` items panel; `SelectedIndex` two-way bound to `ActiveWheelIndex`.
-- `ScrollViewer x:Name="TabScroller"` — wraps ListBox, scrollbar hidden; `◀`/`▶` buttons call `OnScrollLeft`/`OnScrollRight` in code-behind (±150 px offset).
+- `ScrollViewer x:Name="TabScroller"` — wraps ListBox, scrollbar hidden.
+- `◀`/`▶` buttons **navigate between wheel tabs** (decrement/increment `ActiveWheelIndex`), then call `ScrollSelectedTabIntoView()` which posts a `Dispatcher.UIThread.Post` to call `TabList.ScrollIntoView(vm.ActiveWheel)` after layout. This keeps the selected tab visible without exposing the scrollbar.
 - `+` button bound to `AddWheelCommand`.
-- Double-click a tab label to rename (same as before).
+- **Right-click context menu** on each tab item:
+  - **Rename** → calls `wheel.BeginRenameCommand` (puts tab into edit mode)
+  - **Clone** → calls `vm.CloneWheel(wheel)` — deep copy with `(2)` suffix
+  - **Delete** → shows `ConfirmDialog` async; on confirm calls `vm.DeleteWheel(wheel)`
+- Double-click a tab label to rename (triggers `BeginRenameCommand`).
 
 ### `MainWindow.axaml.cs`
 
-- Subscribes to `vm.Wheels.CollectionChanged` to wire `OnWheelPropertyChanged` onto new wheels and auto-scroll `TabScroller` to the end.
-- `OnScrollLeft` / `OnScrollRight` — adjust `TabScroller.Offset.X`.
-- TextBox focus for rename now searches `TabList` (ListBox) instead of `WheelTabs` (TabControl).
+- Subscribes to `vm.Wheels.CollectionChanged` to wire `OnWheelPropertyChanged` onto new wheels and call `ScrollSelectedTabIntoView()`.
+- `OnScrollLeft` / `OnScrollRight` — change `ActiveWheelIndex` by ±1, then scroll tab into view.
+- `OnTabRenameClick`, `OnTabCloneClick`, `OnTabDeleteClick` — extract `WheelViewModel` from `sender is MenuItem { DataContext: WheelViewModel wheel }`.
+- `OnTabDeleteClick` is `async void` — awaits `new ConfirmDialog(message).ShowAsync(this)` before acting.
+- TextBox focus for rename searches `TabList` (ListBox).
+
+### `Views/ConfirmDialog.axaml` + `.axaml.cs`
+
+Minimal modal confirmation window. Pattern:
+```csharp
+// Two constructors — parameterless (Avalonia XAML loader) + message constructor.
+public ConfirmDialog() { InitializeComponent(); }
+public ConfirmDialog(string message) { InitializeComponent(); MessageText.Text = message; }
+public async Task<bool> ShowAsync(Window owner) { await ShowDialog(owner); return _result; }
+private void OnYesClick(...) { _result = true;  Close(); }
+private void OnNoClick(...)  { _result = false; Close(); }
+```
+Always provide a public parameterless constructor (AVLN3001 warning if missing).
 
 ### `WheelViewModel.cs`
 All per-wheel state, commands, and animation logic. `partial class`.
@@ -142,6 +165,25 @@ Walk cumulative slice arcs; first slice where `pointerAngle < cumDeg` wins.
 - `TickSound1Path` — played on odd slice crossings
 - `TickSound2Path` — played on even slice crossings
 
+**`ToLayout()` / `ApplyLayout()` are public** — used by both save/load and `CloneWheel`. When adding new ViewModel state, always update both methods. `ToLayout()` returns a new `WheelLayout`; `ApplyLayout()` replaces all current state and calls `SpinWheelCommand.NotifyCanExecuteChanged()`.
+
+**Confetti properties:**
+| Property | Type | Default | Purpose |
+|----------|------|---------|---------|
+| `ShowConfetti` | `bool` | `false` | Enable confetti burst on win |
+| `ConfettiImagePath` | `string?` | null | Custom image (PNG/JPEG = single frame; GIF = animated) |
+| `ConfettiCount` | `int` | 120 | Number of particles (1–2000) |
+| `ConfettiShapeMode` | `int` | 0 | 0=Mixed, 1=Strips, 2=Circles, 3=Triangles, 4=Stars |
+| `ConfettiColorMode` | `int` | 0 | 0=Rainbow, 1=Custom colour |
+| `ConfettiCustomColor` | `string` | `"#FFD700"` | CSS hex used when `ConfettiColorMode=1` |
+| `IsCustomConfettiColor` | `bool` (computed) | — | `ConfettiColorMode == 1`; used for picker visibility |
+
+**Blackout property:**
+| Property | Type | Default | Purpose |
+|----------|------|---------|---------|
+| `BlackoutWheelMode` | `int` | 0 | 0=off, 1=reveal winner only, 2=reveal all on win |
+| `BorderColorStyle` | `int` | 0 | 0=white borders, 1=black borders |
+
 ### `SpinnerWindow.axaml.cs`
 
 **Drag-to-spin:**
@@ -158,14 +200,38 @@ Custom `Control`. All drawing in `Render(DrawingContext)`.
 ```
 PushGeometryClip(wheelClip)       ← aliased context → hard outer edge for OBS chroma key
   PushRenderOptions(Antialias)    ← interior is smooth
-    Pass 1: screen-space images (mode 0=Static, 2=Upright)
-    Pass 2: PushTransform(rotation) → fills + borders + mode-1 images
+    Pass 1:   screen-space images (mode 0=Static, 2=Upright)
+    Pass 2a:  PushTransform(rotation) → colour fills + mode-1 images (no borders)
+    Pass 2.3: blackout fill (before borders so borders show on top)
+    Pass 2b:  PushTransform(rotation) + aliased sub-options → borders only
     Pass 2.5: winner/loser overlays in screen space (BrightenWinner, DarkenLosers)
-    Pass 3: upright labels in screen space ← MUST be here, not inside PushTransform
+    Pass 3:   upright labels in screen space ← MUST be here, not inside PushTransform
+    Pass 4:   pointer label (ShowPointerLabel, inside clip so it can't overflow)
+    Pass 5:   confetti burst (drawn last, on top of everything)
   end
 end
-Fixed decorations outside clip: outer ring, pointer, centre pin
+Fixed decorations outside clip (aliased, hard edges): outer ring, pointer, centre pin
 ```
+
+**Blackout rendering (Pass 2.3):**
+- Blackout colour = inverse of border: white borders → black fill; black borders → white fill.
+- Mode 1 (reveal winner only): entire wheel blacked out until winner set; then non-winner slices blacked out.
+- Mode 2 (reveal all on win): entire wheel blacked out until winner set; then removed entirely.
+- Centre pin dot is also inverted when blackout is active (does not track the current slice colour).
+- Labels on blacked-out slices are suppressed in Pass 3.
+
+**Confetti particle system (Pass 5):**
+- `SpawnConfetti()` — called when `WinnerIndex` transitions from -1 to ≥0 and `ShowConfetti=true`. Reads `ConfettiCount`, `ConfettiShapeMode`, `ConfettiColorMode`, `ConfettiCustomColor` at spawn time. Starts `DispatcherTimer` at 16 ms.
+- `OnConfettiTick()` — advances particle positions; advances GIF frame index using accumulated ms vs per-frame delay; stops timer when all particles dead.
+- `StopConfetti()` — called when `WinnerIndex` resets to -1 or `ShowConfetti` set to false.
+- **Parabolic arc:** `drawSize = baseSize × 4t(1−t)` — zero at start/end (flat on wheel), full size at `t=0.5` (peak, closest to camera). Gives 3D rising-and-falling illusion.
+- **Spread:** `maxSpread = radius × (0.65 + rng.NextDouble() × 0.33)` → particles land 65–98% from centre. `speed = maxSpread / lifetime` guarantees no particle exceeds its spread.
+- **Particle size:** `baseSize = 16 + rng.NextDouble() × 30` px (16–46 px).
+- **Shapes:** 0=strip rect (w×0.35 aspect), 1=circle, 2=triangle (`UnitTriangle`), 3=star (`UnitStar`). Triangles and stars use static `StreamGeometry` instances scaled via `Matrix.CreateScale(drawSize/2) * Matrix.CreateTranslation(px,py)` inside the rotation push.
+- **`UnitTriangle`** — equilateral, circumradius=1, centred at origin, built once in static initializer.
+- **`UnitStar`** — 5-pointed, outer r=1, inner r=0.382, built once in static initializer.
+- **GIF frames:** loaded via `System.Drawing.Common` (Windows-only; CA1416 warnings expected). Frames decoded to `List<Bitmap>` with `List<int>` ms delays from property `0x5100`. Static PNG/JPEG uses a single `_confettiBitmap`. GIF falls back silently (try/catch) on non-Windows.
+- **Cleanup:** `OnDetachedFromVisualTree` stops timer and disposes all bitmaps/frames.
 
 **Do NOT set `EdgeMode.Antialias`** on the control — hard outer edge is essential for chroma key. Interior antialias only via `PushRenderOptions` inside the clip.
 
@@ -179,9 +245,11 @@ double totalWeight = useWeightedSlices ? active.Sum(s => Math.Max(1.0, s.Weight)
 **Label outline:** 8-direction 2px offset technique (Avalonia `FormattedText` has no `BuildGeometry`).
 
 ### `LayoutService.cs`
-- **JSON:** absolute asset paths.
-- **ZIP:** self-contained (`layout.json` + `img/` + `snd/`), extracted to `%TEMP%\GoldenSpinner\<guid>\` on load. Uses `System.IO.Compression` (no extra packages).
-- ZIP saves and restores all sound paths: `DefaultSoundPath`, `SpinStartSoundPath`, `TickSound1Path`, `TickSound2Path`.
+- **JSON (`SaveAsync`/`LoadAsync`):** serialises the entire `WheelLayout` object — all fields are always included automatically.
+- **ZIP (`SaveZipAsync`/`LoadZipAsync`):** self-contained (`layout.json` + `img/` + `snd/`), extracted to `%TEMP%\GoldenSpinner\<guid>\` on load. Uses `System.IO.Compression` (no extra packages).
+- **⚠️ ZIP save manually copies every field into a new `WheelLayout`.** Unlike JSON save, new model properties are NOT automatically included — they must be explicitly added to the `zipLayout` initialiser in `SaveZipAsync`. Forgetting a field silently drops it from ZIP saves.
+- Asset paths saved in ZIP: `DefaultSoundPath`, `SpinStartSoundPath`, `TickSound1Path`, `TickSound2Path`, `ConfettiImagePath`.
+- Non-asset fields that must be listed: all appearance, weight, blackout, confetti (count/shape/colour mode/custom colour), winner display fields.
 
 ### `AudioService.cs` (Windows)
 NAudio `WaveOutEvent` + `AudioFileReader`. **Four independent channels** — none ever interrupts another:
@@ -201,11 +269,19 @@ public void PlayTickSound(string path, bool channelB)     // false→A, true→B
 Each channel self-cleans via `PlaybackStopped` lambda (disposes reader). All four channels disposed in `Dispose()`.
 
 ### `WheelLayout.cs`
-New fields added:
+All current fields (beyond the original slices/spin/label/chroma/weight/log):
 ```csharp
-public string? SpinStartSoundPath { get; set; }
-public string? TickSound1Path     { get; set; }
-public string? TickSound2Path     { get; set; }
+public int     BorderColorStyle      { get; set; } = 0;       // 0=white, 1=black
+public int     BlackoutWheelMode     { get; set; } = 0;       // 0=off,1=winner only,2=reveal all
+public string? SpinStartSoundPath    { get; set; }
+public string? TickSound1Path        { get; set; }
+public string? TickSound2Path        { get; set; }
+public bool    ShowConfetti          { get; set; } = false;
+public string? ConfettiImagePath     { get; set; }
+public int     ConfettiCount         { get; set; } = 120;
+public int     ConfettiShapeMode     { get; set; } = 0;       // 0=Mixed,1=Strips,2=Circles,3=Triangles,4=Stars
+public int     ConfettiColorMode     { get; set; } = 0;       // 0=Rainbow,1=Custom
+public string  ConfettiCustomColor   { get; set; } = "#FFD700";
 ```
 
 ### `LogService.cs`
@@ -219,12 +295,16 @@ Example: `2026-03-14 | 15:42:07 |  4.0 |  5 | 3.7 | Prize 3`
 - Session separator written before first spin only; file is append-only.
 
 ### `WheelEditorPanel.axaml`
-- **"Sounds" expander** (was "Tick Sounds") contains:
-  - Spin Start Sound — Browse + Remove buttons
-  - Separator
-  - Tick Sound 1 — Browse + Remove
-  - Tick Sound 2 — Browse + Remove
-- **Layout expander** has a red `SaveError` TextBlock below Save/Load buttons (only visible when `SaveError` is non-empty).
+- **Appearance expander** — includes Blackout Wheel ComboBox (No / Reveal winner only / Reveal all on win) and Borders ComboBox (White / Black).
+- **Winner Display expander** — includes confetti section (visible when `ShowConfetti=true`):
+  - Confetti enable checkbox
+  - Custom image browse/remove (PNG/JPEG/GIF)
+  - Particle count `NumericUpDown` (1–2000, step 10)
+  - Shape `ComboBox` (Mixed / Strips / Circles / Triangles / Stars)
+  - Colour `ComboBox` (Rainbow / Custom colour)
+  - Custom colour hex `TextBox` + swatch picker (only visible when `IsCustomConfettiColor=true`)
+- **Sounds expander** — Spin Start Sound + Tick Sound 1 + Tick Sound 2.
+- **Layout expander** — red `SaveError` TextBlock below Save/Load buttons.
 
 ### `Converters/`
 - `HexColorToBrushConverter` — one-way, key `"HexColorToBrush"`, registered in `App.axaml`.
@@ -279,3 +359,6 @@ Only ask user to restart when they want to test changes. Never chain `taskkill` 
 - **No labels inside `PushTransform(rotMatrix)`** — always draw labels in screen space (Pass 3).
 - **No pointer capture in `SpinnerWindow`** — `e.Pointer.Capture(this)` blocks file dialogs and other window interactions. Drag works without it.
 - **No single tick audio channel** — ticks need two independent channels (A/B) so alternating sounds don't cut each other off at high spin speed.
+- **Never forget to update `SaveZipAsync` when adding new `WheelLayout` fields** — JSON save is automatic, but ZIP save manually lists every field. A missing field silently drops on ZIP round-trip with no error.
+- **Do not add `System.Drawing.Common` GIF code paths without a try/catch** — the library is Windows-only since .NET 6 and throws `PlatformNotSupportedException` on Linux/Mac. The confetti GIF loader already handles this; keep the pattern.
+- **`ConfirmDialog` requires a public parameterless constructor** — Avalonia's XAML loader needs it; omitting it raises AVLN3001 at runtime.
