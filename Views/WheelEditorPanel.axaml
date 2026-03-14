@@ -128,6 +128,17 @@
                             </ComboBox>
                         </Grid>
 
+                        <Separator />
+
+                        <TextBlock Text="Blackout Wheel" FontWeight="SemiBold" />
+                        <ComboBox SelectedIndex="{Binding BlackoutWheelMode}"
+                                  HorizontalAlignment="Stretch"
+                                  ToolTip.Tip="Hide slice details during or after the spin">
+                            <ComboBoxItem Content="No — show wheel normally" />
+                            <ComboBoxItem Content="Yes — reveal winner only" />
+                            <ComboBoxItem Content="Yes — reveal all on win" />
+                        </ComboBox>
+
                     </StackPanel>
                 </Expander>
 

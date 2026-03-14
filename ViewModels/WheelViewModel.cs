@@ -102,6 +102,9 @@ namespace GoldenSpinner.ViewModels
         /// <summary>0 = white borders, 1 = black borders (outer ring + slice dividers).</summary>
         [ObservableProperty] private int _borderColorStyle = 0;
 
+        /// <summary>0 = off, 1 = reveal winner only, 2 = reveal all on win.</summary>
+        [ObservableProperty] private int _blackoutWheelMode = 0;
+
         // ── Save/Load feedback ───────────────────────────────────────────────
 
         [ObservableProperty] private string? _saveError;
@@ -580,6 +583,7 @@ namespace GoldenSpinner.ViewModels
             DarkenLosers          = DarkenLosers,
             InvertLoserText       = InvertLoserText,
             BorderColorStyle      = BorderColorStyle,
+            BlackoutWheelMode     = BlackoutWheelMode,
             SpinStartSoundPath    = string.IsNullOrEmpty(SpinStartSoundPath) ? null : SpinStartSoundPath,
             TickSound1Path        = string.IsNullOrEmpty(TickSound1Path) ? null : TickSound1Path,
             TickSound2Path        = string.IsNullOrEmpty(TickSound2Path) ? null : TickSound2Path,
@@ -615,6 +619,7 @@ namespace GoldenSpinner.ViewModels
             DarkenLosers          = layout.DarkenLosers;
             InvertLoserText       = layout.InvertLoserText;
             BorderColorStyle      = Math.Clamp(layout.BorderColorStyle, 0, 1);
+            BlackoutWheelMode     = Math.Clamp(layout.BlackoutWheelMode, 0, 2);
             SpinStartSoundPath    = layout.SpinStartSoundPath;
             TickSound1Path        = layout.TickSound1Path;
             TickSound2Path        = layout.TickSound2Path;

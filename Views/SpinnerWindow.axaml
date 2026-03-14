@@ -40,7 +40,8 @@
                 BrightenWinner="{Binding ActiveWheel.BrightenWinner}"
                 DarkenLosers="{Binding ActiveWheel.DarkenLosers}"
                 InvertLoserText="{Binding ActiveWheel.InvertLoserText}"
-                BorderColorStyle="{Binding ActiveWheel.BorderColorStyle}" />
+                BorderColorStyle="{Binding ActiveWheel.BorderColorStyle}"
+                BlackoutWheelMode="{Binding ActiveWheel.BlackoutWheelMode}" />
         </Viewbox>
 
         <!-- Winner banner -->

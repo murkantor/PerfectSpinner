@@ -39,6 +39,9 @@ namespace GoldenSpinner.Models
         // Border
         public int BorderColorStyle { get; set; } = 0; // 0 = white, 1 = black
 
+        // Blackout: 0 = off, 1 = reveal winner only, 2 = reveal all on win
+        public int BlackoutWheelMode { get; set; } = 0;
+
         // Sounds
         public string? SpinStartSoundPath { get; set; }
         public string? TickSound1Path { get; set; }

@@ -87,6 +87,10 @@ namespace GoldenSpinner.Controls
         public static readonly StyledProperty<bool> ShowPointerLabelProperty =
             AvaloniaProperty.Register<SpinnerWheelControl, bool>(nameof(ShowPointerLabel), false);
 
+        /// <summary>0 = off, 1 = reveal winner only, 2 = reveal all on win.</summary>
+        public static readonly StyledProperty<int> BlackoutWheelModeProperty =
+            AvaloniaProperty.Register<SpinnerWheelControl, int>(nameof(BlackoutWheelMode), 0);
+
         // ── Property accessors ───────────────────────────────────────────────
 
         public ObservableCollection<WheelSliceViewModel>? Slices
@@ -179,6 +183,12 @@ namespace GoldenSpinner.Controls
             set => SetValue(ShowPointerLabelProperty, value);
         }
 
+        public int BlackoutWheelMode
+        {
+            get => GetValue(BlackoutWheelModeProperty);
+            set => SetValue(BlackoutWheelModeProperty, value);
+        }
+
         // ── Constructor ───────────────────────────────────────────────────────
 
         public SpinnerWheelControl()
@@ -201,7 +211,7 @@ namespace GoldenSpinner.Controls
                 ShowLabelsProperty, LabelFontFamilyProperty,
                 LabelFontSizeProperty, LabelColorStyleProperty, LabelBoldProperty,
                 BrightenWinnerProperty, DarkenLosersProperty, InvertLoserTextProperty,
-                ShowPointerLabelProperty, BorderColorStyleProperty);
+                ShowPointerLabelProperty, BorderColorStyleProperty, BlackoutWheelModeProperty);
         }
 
         // ── Property change tracking ─────────────────────────────────────────
@@ -291,6 +301,7 @@ namespace GoldenSpinner.Controls
             bool   invertLoserText  = InvertLoserText;
             bool   showPointerLabel = ShowPointerLabel;
             int    borderColorStyle = BorderColorStyle;
+            int    blackoutMode     = BlackoutWheelMode;
             IBrush borderBrush      = borderColorStyle == 1 ? Brushes.Black : Brushes.White;
 
             // Pre-compute per-slice angles.
@@ -453,6 +464,26 @@ namespace GoldenSpinner.Controls
                         labelFont, labelFontSize, labelColorStyle, labelBold,
                         textMatchesBorder: isLoser && invertLoserText);
                 }
+            }
+
+            // ── Pass 3.5: Blackout overlay ────────────────────────────────────────
+            // Mode 1: after spin, solid black over every non-winner slice (hides fills + labels).
+            // Mode 2: during spin (no winner yet), solid black circle over the whole wheel.
+            if (blackoutMode == 1 && winnerIndex >= 0)
+            {
+                for (int i = 0; i < n; i++)
+                {
+                    if (!isWinner[i])
+                    {
+                        var geo = BuildSliceGeometry(center, radius,
+                            starts[i] + rotRad, ends[i] + rotRad, n == 1);
+                        ctx.DrawGeometry(Brushes.Black, null, geo);
+                    }
+                }
+            }
+            else if (blackoutMode == 2 && winnerIndex == -1)
+            {
+                ctx.DrawEllipse(Brushes.Black, null, center, radius, radius);
             }
 
             // ── Pass 4: Pointer label — slice name just inside the top edge ──────
