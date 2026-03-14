@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Linq;
@@ -199,6 +200,7 @@ namespace GoldenSpinner.Views
 
         private static void BringToFrontNoActivate(Window window)
         {
+            if (!OperatingSystem.IsWindows()) return;
             var handle = window.TryGetPlatformHandle()?.Handle ?? nint.Zero;
             if (handle != nint.Zero)
                 SetWindowPos(handle, nint.Zero, 0, 0, 0, 0,
