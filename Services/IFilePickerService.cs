@@ -10,6 +10,7 @@ namespace GoldenSpinner.Services
     public interface IFilePickerService
     {
         Task<string?> OpenImageFileAsync();
+        Task<string?> OpenConfettiFileAsync();
         Task<string?> OpenSoundFileAsync();
         Task<string?> OpenLayoutFileAsync();
         Task<string?> SaveLayoutFileAsync(string defaultName);

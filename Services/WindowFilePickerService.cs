@@ -28,6 +28,12 @@ namespace GoldenSpinner.Services
             MimeTypes = ["image/png", "image/jpeg"]
         };
 
+        private static readonly FilePickerFileType ConfettiImageFilter = new("Images (PNG / JPEG / GIF)")
+        {
+            Patterns = ["*.png", "*.jpg", "*.jpeg", "*.gif"],
+            MimeTypes = ["image/png", "image/jpeg", "image/gif"]
+        };
+
         private static readonly FilePickerFileType AudioFilter = new("Audio")
         {
             Patterns = ["*.wav", "*.mp3"],
@@ -56,6 +62,9 @@ namespace GoldenSpinner.Services
 
         public Task<string?> OpenImageFileAsync() =>
             PickOpenFileAsync("Select Image", [ImageFilter]);
+
+        public Task<string?> OpenConfettiFileAsync() =>
+            PickOpenFileAsync("Select Confetti Image", [ConfettiImageFilter]);
 
         public Task<string?> OpenSoundFileAsync() =>
             PickOpenFileAsync("Select Sound", [AudioFilter]);

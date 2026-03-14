@@ -105,6 +105,11 @@ namespace GoldenSpinner.ViewModels
         /// <summary>0 = off, 1 = reveal winner only, 2 = reveal all on win.</summary>
         [ObservableProperty] private int _blackoutWheelMode = 0;
 
+        // ── Confetti ──────────────────────────────────────────────────────────
+
+        [ObservableProperty] private bool _showConfetti = false;
+        [ObservableProperty] private string? _confettiImagePath;
+
         // ── Save/Load feedback ───────────────────────────────────────────────
 
         [ObservableProperty] private string? _saveError;
@@ -501,6 +506,16 @@ namespace GoldenSpinner.ViewModels
         private void RemoveTickSound2() => TickSound2Path = null;
 
         [RelayCommand]
+        private async Task BrowseConfettiImageAsync()
+        {
+            var path = await _picker.OpenConfettiFileAsync();
+            if (path != null) ConfettiImagePath = path;
+        }
+
+        [RelayCommand]
+        private void RemoveConfettiImage() => ConfettiImagePath = null;
+
+        [RelayCommand]
         private void BeginRename()
         {
             _nameBeforeEdit = Name;
@@ -584,6 +599,8 @@ namespace GoldenSpinner.ViewModels
             InvertLoserText       = InvertLoserText,
             BorderColorStyle      = BorderColorStyle,
             BlackoutWheelMode     = BlackoutWheelMode,
+            ShowConfetti          = ShowConfetti,
+            ConfettiImagePath     = string.IsNullOrEmpty(ConfettiImagePath) ? null : ConfettiImagePath,
             SpinStartSoundPath    = string.IsNullOrEmpty(SpinStartSoundPath) ? null : SpinStartSoundPath,
             TickSound1Path        = string.IsNullOrEmpty(TickSound1Path) ? null : TickSound1Path,
             TickSound2Path        = string.IsNullOrEmpty(TickSound2Path) ? null : TickSound2Path,
@@ -620,6 +637,8 @@ namespace GoldenSpinner.ViewModels
             InvertLoserText       = layout.InvertLoserText;
             BorderColorStyle      = Math.Clamp(layout.BorderColorStyle, 0, 1);
             BlackoutWheelMode     = Math.Clamp(layout.BlackoutWheelMode, 0, 2);
+            ShowConfetti          = layout.ShowConfetti;
+            ConfettiImagePath     = layout.ConfettiImagePath;
             SpinStartSoundPath    = layout.SpinStartSoundPath;
             TickSound1Path        = layout.TickSound1Path;
             TickSound2Path        = layout.TickSound2Path;

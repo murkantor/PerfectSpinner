@@ -235,6 +235,37 @@
                         <CheckBox IsChecked="{Binding InvertLoserText}"
                                   Content="Invert loser text (swap text and border colours)" />
 
+                        <Separator Margin="0,2,0,2" />
+
+                        <CheckBox IsChecked="{Binding ShowConfetti}"
+                                  Content="🎉  Confetti explosion on win" />
+
+                        <TextBlock Text="Custom confetti image:"
+                                   Margin="0,4,0,0"
+                                   IsVisible="{Binding ShowConfetti}" />
+                        <TextBlock Text="{Binding ConfettiImagePath}"
+                                   FontSize="11" TextTrimming="CharacterEllipsis"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                                   IsVisible="{Binding ConfettiImagePath,
+                                               Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                        <TextBlock Text="Default: coloured confetti shapes"
+                                   FontSize="11"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                                   IsVisible="{Binding ConfettiImagePath,
+                                               Converter={x:Static StringConverters.IsNullOrEmpty}}" />
+                        <StackPanel Orientation="Horizontal" Spacing="4"
+                                    IsVisible="{Binding ShowConfetti}">
+                            <Button Content="🖼  Browse Image…"
+                                    Command="{Binding BrowseConfettiImageCommand}"
+                                    Padding="8,4"
+                                    ToolTip.Tip="PNG / JPEG / GIF — GIF uses first frame" />
+                            <Button Content="✕ Remove"
+                                    Command="{Binding RemoveConfettiImageCommand}"
+                                    Padding="8,4"
+                                    IsVisible="{Binding ConfettiImagePath,
+                                                Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                        </StackPanel>
+
                     </StackPanel>
                 </Expander>
 

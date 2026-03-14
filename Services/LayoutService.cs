@@ -115,6 +115,9 @@ namespace GoldenSpinner.Services
                 DarkenLosers          = layout.DarkenLosers,
                 InvertLoserText       = layout.InvertLoserText,
                 BorderColorStyle      = layout.BorderColorStyle,
+                BlackoutWheelMode     = layout.BlackoutWheelMode,
+                ShowConfetti          = layout.ShowConfetti,
+                ConfettiImagePath     = AssignEntry(layout.ConfettiImagePath, "img", imageMap),
                 SpinStartSoundPath    = AssignEntry(layout.SpinStartSoundPath, "snd", soundMap),
                 TickSound1Path        = AssignEntry(layout.TickSound1Path, "snd", soundMap),
                 TickSound2Path        = AssignEntry(layout.TickSound2Path, "snd", soundMap),
@@ -173,6 +176,7 @@ namespace GoldenSpinner.Services
                 layout.SpinStartSoundPath  = ResolveAsset(tempDir, layout.SpinStartSoundPath);
                 layout.TickSound1Path      = ResolveAsset(tempDir, layout.TickSound1Path);
                 layout.TickSound2Path      = ResolveAsset(tempDir, layout.TickSound2Path);
+                layout.ConfettiImagePath   = ResolveAsset(tempDir, layout.ConfettiImagePath);
 
                 return layout;
             }

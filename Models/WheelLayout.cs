@@ -53,5 +53,9 @@ namespace GoldenSpinner.Models
         public bool BrightenWinner { get; set; } = false;
         public bool DarkenLosers { get; set; } = false;
         public bool InvertLoserText { get; set; } = false;
+
+        // Confetti
+        public bool ShowConfetti { get; set; } = false;
+        public string? ConfettiImagePath { get; set; }
     }
 }

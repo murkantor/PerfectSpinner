@@ -41,7 +41,9 @@
                 DarkenLosers="{Binding ActiveWheel.DarkenLosers}"
                 InvertLoserText="{Binding ActiveWheel.InvertLoserText}"
                 BorderColorStyle="{Binding ActiveWheel.BorderColorStyle}"
-                BlackoutWheelMode="{Binding ActiveWheel.BlackoutWheelMode}" />
+                BlackoutWheelMode="{Binding ActiveWheel.BlackoutWheelMode}"
+                ShowConfetti="{Binding ActiveWheel.ShowConfetti}"
+                ConfettiImagePath="{Binding ActiveWheel.ConfettiImagePath}" />
         </Viewbox>
 
         <!-- Winner banner -->

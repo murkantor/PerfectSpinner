@@ -6,6 +6,7 @@ using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Globalization;
 using Avalonia;
+using Avalonia.Threading;
 using Avalonia.Controls;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
@@ -90,6 +91,14 @@ namespace GoldenSpinner.Controls
         /// <summary>0 = off, 1 = reveal winner only, 2 = reveal all on win.</summary>
         public static readonly StyledProperty<int> BlackoutWheelModeProperty =
             AvaloniaProperty.Register<SpinnerWheelControl, int>(nameof(BlackoutWheelMode), 0);
+
+        /// <summary>When true, a confetti burst plays when a winner is decided.</summary>
+        public static readonly StyledProperty<bool> ShowConfettiProperty =
+            AvaloniaProperty.Register<SpinnerWheelControl, bool>(nameof(ShowConfetti), false);
+
+        /// <summary>Optional path to a PNG/JPEG/GIF used as each confetti particle. Null = default coloured shapes.</summary>
+        public static readonly StyledProperty<string?> ConfettiImagePathProperty =
+            AvaloniaProperty.Register<SpinnerWheelControl, string?>(nameof(ConfettiImagePath));
 
         // ── Property accessors ───────────────────────────────────────────────
 
@@ -189,6 +198,18 @@ namespace GoldenSpinner.Controls
             set => SetValue(BlackoutWheelModeProperty, value);
         }
 
+        public bool ShowConfetti
+        {
+            get => GetValue(ShowConfettiProperty);
+            set => SetValue(ShowConfettiProperty, value);
+        }
+
+        public string? ConfettiImagePath
+        {
+            get => GetValue(ConfettiImagePathProperty);
+            set => SetValue(ConfettiImagePathProperty, value);
+        }
+
         // ── Constructor ───────────────────────────────────────────────────────
 
         public SpinnerWheelControl()
@@ -214,6 +235,121 @@ namespace GoldenSpinner.Controls
                 ShowPointerLabelProperty, BorderColorStyleProperty, BlackoutWheelModeProperty);
         }
 
+        // ── Confetti particle system ──────────────────────────────────────────
+
+        private sealed class ConfettiParticle
+        {
+            public double X, Y;             // position relative to wheel centre
+            public double VX, VY;           // velocity px/s
+            public double BaseSize;         // reference size in px
+            public double Rotation;         // degrees
+            public double RotVelocity;      // degrees/s
+            public double Age;              // seconds since spawn
+            public double Lifetime;         // total lifetime seconds
+            public Color  Color;
+            public int    Shape;            // 0 = elongated rect, 1 = circle
+        }
+
+        private static readonly Color[] ConfettiColors =
+        [
+            Color.Parse("#FF4444"), Color.Parse("#FFD700"), Color.Parse("#44CC44"),
+            Color.Parse("#4488FF"), Color.Parse("#FF69B4"), Color.Parse("#AA44FF"),
+            Color.Parse("#FF8C00"), Color.Parse("#00CED1"), Color.Parse("#FFFFFF"),
+        ];
+
+        private readonly List<ConfettiParticle> _confettiParticles = new();
+        private DispatcherTimer? _confettiTimer;
+        private DateTimeOffset   _lastConfettiTick;
+        private Bitmap?          _confettiBitmap;
+
+        private void SpawnConfetti()
+        {
+            _confettiParticles.Clear();
+            var rng = new Random();
+            for (int i = 0; i < 120; i++)
+            {
+                var angle = rng.NextDouble() * 2 * Math.PI;
+                var speed = 40 + rng.NextDouble() * 160; // px/s
+                _confettiParticles.Add(new ConfettiParticle
+                {
+                    X           = 0,
+                    Y           = 0,
+                    VX          = speed * Math.Cos(angle),
+                    VY          = speed * Math.Sin(angle),
+                    BaseSize    = 8 + rng.NextDouble() * 14,
+                    Rotation    = rng.NextDouble() * 360,
+                    RotVelocity = (rng.NextDouble() - 0.5) * 720,
+                    Age         = 0,
+                    Lifetime    = 2.0 + rng.NextDouble() * 1.5,
+                    Color       = ConfettiColors[rng.Next(ConfettiColors.Length)],
+                    Shape       = rng.Next(2),
+                });
+            }
+
+            _lastConfettiTick = DateTimeOffset.UtcNow;
+            _confettiTimer?.Stop();
+            _confettiTimer = new DispatcherTimer(DispatcherPriority.Render)
+            {
+                Interval = TimeSpan.FromMilliseconds(16)
+            };
+            _confettiTimer.Tick += OnConfettiTick;
+            _confettiTimer.Start();
+        }
+
+        private void StopConfetti()
+        {
+            _confettiTimer?.Stop();
+            _confettiTimer = null;
+            _confettiParticles.Clear();
+            InvalidateVisual();
+        }
+
+        private void OnConfettiTick(object? sender, EventArgs e)
+        {
+            var now = DateTimeOffset.UtcNow;
+            var dt  = Math.Min((now - _lastConfettiTick).TotalSeconds, 0.05);
+            _lastConfettiTick = now;
+
+            bool anyAlive = false;
+            foreach (var p in _confettiParticles)
+            {
+                p.Age      += dt;
+                p.X        += p.VX * dt;
+                p.Y        += p.VY * dt;
+                p.Rotation += p.RotVelocity * dt;
+                if (p.Age < p.Lifetime) anyAlive = true;
+            }
+
+            InvalidateVisual();
+
+            if (!anyAlive)
+            {
+                _confettiTimer?.Stop();
+                _confettiTimer = null;
+                _confettiParticles.Clear();
+                InvalidateVisual();
+            }
+        }
+
+        private void LoadConfettiBitmap()
+        {
+            _confettiBitmap?.Dispose();
+            _confettiBitmap = null;
+            var path = ConfettiImagePath;
+            if (string.IsNullOrEmpty(path) || !System.IO.File.Exists(path)) return;
+            try { _confettiBitmap = new Bitmap(path); }
+            catch { /* silently ignore bad paths */ }
+        }
+
+        protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+        {
+            base.OnDetachedFromVisualTree(e);
+            _confettiTimer?.Stop();
+            _confettiTimer = null;
+            _confettiBitmap?.Dispose();
+            _confettiBitmap = null;
+        }
+
         // ── Property change tracking ─────────────────────────────────────────
 
         protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
@@ -235,6 +371,23 @@ namespace GoldenSpinner.Controls
                 }
 
                 InvalidateVisual();
+            }
+            else if (change.Property == WinnerIndexProperty)
+            {
+                int oldVal = change.OldValue is int ov ? ov : -1;
+                int newVal = change.NewValue is int nv ? nv : -1;
+                if (oldVal < 0 && newVal >= 0 && ShowConfetti)
+                    SpawnConfetti();
+                else if (newVal < 0)
+                    StopConfetti();
+            }
+            else if (change.Property == ConfettiImagePathProperty)
+            {
+                LoadConfettiBitmap();
+            }
+            else if (change.Property == ShowConfettiProperty && !(bool)(change.NewValue ?? false))
+            {
+                StopConfetti();
             }
         }
 
@@ -534,6 +687,63 @@ namespace GoldenSpinner.Controls
                     var labelPos = new Point(center.X, center.Y - radius + 28);
                     DrawSliceLabel(ctx, pLabel, labelPos, n,
                         labelFont, labelFontSize, labelColorStyle, labelBold);
+                }
+            }
+
+            // ── Pass 5: Confetti burst ────────────────────────────────────────────
+            // Drawn last so it sits on top of everything.
+            // The wheelClip already constrains every particle to the circle boundary.
+            if (_confettiParticles.Count > 0)
+            {
+                foreach (var p in _confettiParticles)
+                {
+                    if (p.Age >= p.Lifetime) continue;
+
+                    double t = p.Age / p.Lifetime;
+
+                    // Size: starts tiny (0.1×), snaps to full at t=0.3, then keeps growing
+                    // as the particle "rises toward the camera" (top-down perspective).
+                    double scaleFactor = t < 0.3 ? t / 0.3 : 1.0;
+                    double drawSize    = p.BaseSize * scaleFactor * (1.0 + t * 2.5);
+
+                    // Opacity: fully visible until 70 % of lifetime, then fades to 0.
+                    double opacity = t < 0.7 ? 1.0 : 1.0 - (t - 0.7) / 0.3;
+                    if (opacity <= 0) continue;
+
+                    double px = center.X + p.X;
+                    double py = center.Y + p.Y;
+
+                    var rot = Matrix.CreateTranslation(-px, -py)
+                            * Matrix.CreateRotation(p.Rotation * Math.PI / 180.0)
+                            * Matrix.CreateTranslation(px, py);
+
+                    using var _o  = ctx.PushOpacity(opacity);
+                    using var _tr = ctx.PushTransform(rot);
+
+                    if (_confettiBitmap != null)
+                    {
+                        // Custom image: draw the bitmap scaled to drawSize.
+                        ctx.DrawImage(_confettiBitmap,
+                            new Rect(px - drawSize / 2, py - drawSize / 2, drawSize, drawSize));
+                    }
+                    else
+                    {
+                        var brush = new SolidColorBrush(p.Color);
+                        if (p.Shape == 0)
+                        {
+                            // Elongated rectangle — classic paper-confetti strip.
+                            double w = drawSize * 0.35;
+                            double h = drawSize;
+                            ctx.DrawRectangle(brush, null,
+                                new Rect(px - w / 2, py - h / 2, w, h));
+                        }
+                        else
+                        {
+                            // Circle — confetti dot.
+                            ctx.DrawEllipse(brush, null,
+                                new Point(px, py), drawSize * 0.4, drawSize * 0.4);
+                        }
+                    }
                 }
             }
 
