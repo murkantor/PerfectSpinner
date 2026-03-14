@@ -410,6 +410,39 @@ namespace GoldenSpinner.Controls
                 }
             }
 
+            int winnerIndex = WinnerIndex;
+
+            // ── Pass 2.3: Blackout fill (before borders so borders show on top) ──
+            // Mode 1 (reveal winner only):
+            //   - No winner yet → entire wheel solid black.
+            //   - Winner decided → black out every non-winner slice; winner stays visible.
+            // Mode 2 (reveal all on win):
+            //   - No winner yet → entire wheel solid black.
+            //   - Winner decided → normal rendering, no overlay.
+            if (blackoutMode == 1)
+            {
+                if (winnerIndex < 0)
+                {
+                    ctx.DrawEllipse(Brushes.Black, null, center, radius, radius);
+                }
+                else
+                {
+                    for (int i = 0; i < n; i++)
+                    {
+                        if (!isWinner[i])
+                        {
+                            var geo = BuildSliceGeometry(center, radius,
+                                starts[i] + rotRad, ends[i] + rotRad, n == 1);
+                            ctx.DrawGeometry(Brushes.Black, null, geo);
+                        }
+                    }
+                }
+            }
+            else if (blackoutMode == 2 && winnerIndex < 0)
+            {
+                ctx.DrawEllipse(Brushes.Black, null, center, radius, radius);
+            }
+
             // ── Pass 2b: Borders only (aliased — hard crisp lines) ───────────
             // Nested PushRenderOptions overrides the outer Antialias for border drawing only.
             using (ctx.PushRenderOptions(new RenderOptions { EdgeMode = EdgeMode.Aliased }))
@@ -429,7 +462,6 @@ namespace GoldenSpinner.Controls
             // ── Pass 2.5: Winner/loser highlight overlays (screen-space) ─────────
             // Applied after fills so the overlay sits on top of both solid colours
             // and images.  Only drawn when a winner has been decided.
-            int winnerIndex = WinnerIndex;
             if (winnerIndex >= 0 && (brightenWinner || darkenLosers))
             {
                 var winnerOverlay = new SolidColorBrush(Color.FromArgb(80,  255, 255, 255));
@@ -455,6 +487,12 @@ namespace GoldenSpinner.Controls
                 for (int i = 0; i < n; i++)
                 {
                     if (string.IsNullOrEmpty(active[i].Label)) continue;
+
+                    // In blackout mode 1: skip labels on blacked-out slices.
+                    // (mode 2 with no winner: entire wheel is black, skip all labels)
+                    if (blackoutMode == 1 && !isWinner[i]) continue;
+                    if (blackoutMode == 2 && winnerIndex < 0) continue;
+
                     var screenMid = (starts[i] + ends[i]) / 2.0 + rotRad;
                     var labelCenter = new Point(
                         center.X + radius * 0.68 * Math.Cos(screenMid),
@@ -464,39 +502,6 @@ namespace GoldenSpinner.Controls
                         labelFont, labelFontSize, labelColorStyle, labelBold,
                         textMatchesBorder: isLoser && invertLoserText);
                 }
-            }
-
-            // ── Pass 3.5: Blackout overlay ────────────────────────────────────────
-            // Mode 1 (reveal winner only):
-            //   - No winner yet → entire wheel solid black.
-            //   - Winner decided → black out every non-winner slice; winner stays visible.
-            // Mode 2 (reveal all on win):
-            //   - No winner yet → entire wheel solid black.
-            //   - Winner decided → normal rendering, no overlay.
-            if (blackoutMode == 1)
-            {
-                if (winnerIndex < 0)
-                {
-                    // Whole wheel black — nothing to reveal yet.
-                    ctx.DrawEllipse(Brushes.Black, null, center, radius, radius);
-                }
-                else
-                {
-                    // Black out every slice except the winner.
-                    for (int i = 0; i < n; i++)
-                    {
-                        if (!isWinner[i])
-                        {
-                            var geo = BuildSliceGeometry(center, radius,
-                                starts[i] + rotRad, ends[i] + rotRad, n == 1);
-                            ctx.DrawGeometry(Brushes.Black, null, geo);
-                        }
-                    }
-                }
-            }
-            else if (blackoutMode == 2 && winnerIndex < 0)
-            {
-                ctx.DrawEllipse(Brushes.Black, null, center, radius, radius);
             }
 
             // ── Pass 4: Pointer label — slice name just inside the top edge ──────
