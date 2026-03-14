@@ -1,0 +1,27 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="GoldenSpinner.Views.ConfirmDialog"
+        Title="Confirm"
+        Width="360" Height="150"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False"
+        ShowInTaskbar="False">
+
+    <Grid RowDefinitions="*,Auto" Margin="20">
+
+        <TextBlock Grid.Row="0" x:Name="MessageText"
+                   TextWrapping="Wrap"
+                   VerticalAlignment="Center"
+                   FontSize="14" />
+
+        <StackPanel Grid.Row="1" Orientation="Horizontal"
+                    HorizontalAlignment="Right" Spacing="8">
+            <Button x:Name="YesButton" Content="Delete" Width="80"
+                    Click="OnYesClick" />
+            <Button x:Name="NoButton"  Content="Cancel" Width="80"
+                    Click="OnNoClick"  IsDefault="True" />
+        </StackPanel>
+
+    </Grid>
+
+</Window>

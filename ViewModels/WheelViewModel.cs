@@ -527,33 +527,7 @@ namespace GoldenSpinner.ViewModels
             var path = await _picker.SaveLayoutFileAsync(Name.ToLower().Replace(' ', '-'));
             if (path == null) return;
 
-            var layout = new WheelLayout
-            {
-                Name                = Name,
-                Slices              = Slices.Select(s => s.ToModel()).ToList(),
-                SpinDurationSeconds = (double)SpinDurationSeconds,
-                Friction            = Friction,
-                SliceImageMode      = SliceImageMode,
-                ShowLabels          = ShowLabels,
-                ShowPointerLabel    = ShowPointerLabel,
-                LabelFontIndex      = LabelFontIndex,
-                LabelFontSize       = LabelFontSize,
-                LabelColorStyle     = LabelColorStyle,
-                LabelBold           = LabelBold,
-                ChromaKeyColor      = ChromaKeyColor,
-                UseWeightedSlices      = UseWeightedSlices,
-                GlobalWeight           = GlobalWeight,
-                LogSpins               = LogSpins,
-                WinnerMessageTemplate  = WinnerMessageTemplate,
-                DefaultSoundPath       = string.IsNullOrEmpty(DefaultSoundPath) ? null : DefaultSoundPath,
-                BrightenWinner         = BrightenWinner,
-                DarkenLosers           = DarkenLosers,
-                InvertLoserText        = InvertLoserText,
-                BorderColorStyle       = BorderColorStyle,
-                SpinStartSoundPath     = string.IsNullOrEmpty(SpinStartSoundPath) ? null : SpinStartSoundPath,
-                TickSound1Path         = string.IsNullOrEmpty(TickSound1Path) ? null : TickSound1Path,
-                TickSound2Path         = string.IsNullOrEmpty(TickSound2Path) ? null : TickSound2Path,
-            };
+            var layout = ToLayout();
 
             try
             {
@@ -579,20 +553,58 @@ namespace GoldenSpinner.ViewModels
                 : await _layoutService.LoadAsync(path);
             if (layout == null) return;
 
+            ApplyLayout(layout);
+        }
+
+        /// <summary>Snapshots all current state into a serialisable <see cref="WheelLayout"/>.</summary>
+        public WheelLayout ToLayout() => new WheelLayout
+        {
+            Name                  = Name,
+            Slices                = Slices.Select(s => s.ToModel()).ToList(),
+            SpinDurationSeconds   = (double)SpinDurationSeconds,
+            Friction              = Friction,
+            SliceImageMode        = SliceImageMode,
+            ShowLabels            = ShowLabels,
+            ShowPointerLabel      = ShowPointerLabel,
+            LabelFontIndex        = LabelFontIndex,
+            LabelFontSize         = LabelFontSize,
+            LabelColorStyle       = LabelColorStyle,
+            LabelBold             = LabelBold,
+            ChromaKeyColor        = ChromaKeyColor,
+            UseWeightedSlices     = UseWeightedSlices,
+            GlobalWeight          = GlobalWeight,
+            LogSpins              = LogSpins,
+            WinnerMessageTemplate = WinnerMessageTemplate,
+            DefaultSoundPath      = string.IsNullOrEmpty(DefaultSoundPath) ? null : DefaultSoundPath,
+            BrightenWinner        = BrightenWinner,
+            DarkenLosers          = DarkenLosers,
+            InvertLoserText       = InvertLoserText,
+            BorderColorStyle      = BorderColorStyle,
+            SpinStartSoundPath    = string.IsNullOrEmpty(SpinStartSoundPath) ? null : SpinStartSoundPath,
+            TickSound1Path        = string.IsNullOrEmpty(TickSound1Path) ? null : TickSound1Path,
+            TickSound2Path        = string.IsNullOrEmpty(TickSound2Path) ? null : TickSound2Path,
+        };
+
+        /// <summary>
+        /// Applies a <see cref="WheelLayout"/> to this wheel, replacing all current state.
+        /// Used by load and clone operations.
+        /// </summary>
+        public void ApplyLayout(WheelLayout layout)
+        {
             Slices.Clear();
             foreach (var model in layout.Slices)
                 Slices.Add(new WheelSliceViewModel(model));
 
-            SpinDurationSeconds = (decimal)Math.Max(1.0, layout.SpinDurationSeconds);
-            Friction            = Math.Clamp(layout.Friction, 1, 10);
-            SliceImageMode      = Math.Clamp(layout.SliceImageMode, 0, 2);
-            ShowLabels          = layout.ShowLabels;
-            ShowPointerLabel    = layout.ShowPointerLabel;
-            LabelFontIndex      = Math.Clamp(layout.LabelFontIndex, 0, _fontFamilyValues.Length - 1);
-            LabelFontSize       = Math.Clamp(layout.LabelFontSize, 0, 72);
-            LabelColorStyle     = Math.Clamp(layout.LabelColorStyle, 0, 1);
-            LabelBold           = layout.LabelBold;
-            ChromaKeyColor      = string.IsNullOrWhiteSpace(layout.ChromaKeyColor) ? "#00FF00" : layout.ChromaKeyColor;
+            SpinDurationSeconds   = (decimal)Math.Max(1.0, layout.SpinDurationSeconds);
+            Friction              = Math.Clamp(layout.Friction, 1, 10);
+            SliceImageMode        = Math.Clamp(layout.SliceImageMode, 0, 2);
+            ShowLabels            = layout.ShowLabels;
+            ShowPointerLabel      = layout.ShowPointerLabel;
+            LabelFontIndex        = Math.Clamp(layout.LabelFontIndex, 0, _fontFamilyValues.Length - 1);
+            LabelFontSize         = Math.Clamp(layout.LabelFontSize, 0, 72);
+            LabelColorStyle       = Math.Clamp(layout.LabelColorStyle, 0, 1);
+            LabelBold             = layout.LabelBold;
+            ChromaKeyColor        = string.IsNullOrWhiteSpace(layout.ChromaKeyColor) ? "#00FF00" : layout.ChromaKeyColor;
             UseWeightedSlices     = layout.UseWeightedSlices;
             GlobalWeight          = Math.Clamp(layout.GlobalWeight, 1, 100);
             LogSpins              = layout.LogSpins;
@@ -608,10 +620,10 @@ namespace GoldenSpinner.ViewModels
             TickSound2Path        = layout.TickSound2Path;
             if (!string.IsNullOrWhiteSpace(layout.Name))
                 Name = layout.Name;
-            CurrentRotation       = 0;
-            WinnerMessage       = string.Empty;
-            WinnerIndex         = -1;
-            SelectedSlice       = Slices.FirstOrDefault();
+            CurrentRotation = 0;
+            WinnerMessage   = string.Empty;
+            WinnerIndex     = -1;
+            SelectedSlice   = Slices.FirstOrDefault();
             SpinWheelCommand.NotifyCanExecuteChanged();
         }
 

@@ -1,5 +1,7 @@
 using System;
 using System.Collections.ObjectModel;
+using System.Linq;
+using System.Text.RegularExpressions;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using GoldenSpinner.Services;
@@ -60,6 +62,55 @@ namespace GoldenSpinner.ViewModels
                 _picker, _layoutService, _audioService, _logService,
                 $"Wheel {Wheels.Count + 1}"));
             ActiveWheelIndex = Wheels.Count - 1;
+        }
+
+        /// <summary>
+        /// Creates a deep copy of <paramref name="source"/> and appends it after the original.
+        /// The clone is named by appending " (2)", " (3)" etc. to the base name.
+        /// </summary>
+        public void CloneWheel(WheelViewModel source)
+        {
+            var layout = source.ToLayout();
+            var cloneName = GenerateCloneName(source.Name);
+            var clone = new WheelViewModel(_picker, _layoutService, _audioService, _logService, cloneName);
+            layout.Name = cloneName;
+            clone.ApplyLayout(layout);
+
+            var insertAt = Wheels.IndexOf(source) + 1;
+            Wheels.Insert(insertAt, clone);
+            ActiveWheelIndex = insertAt;
+        }
+
+        /// <summary>
+        /// Removes <paramref name="wheel"/> from <see cref="Wheels"/>.
+        /// If it was the only wheel, a blank "Wheel 1" is added so the app is never empty.
+        /// </summary>
+        public void DeleteWheel(WheelViewModel wheel)
+        {
+            var idx = Wheels.IndexOf(wheel);
+            if (idx < 0) return;
+
+            Wheels.Remove(wheel);
+
+            if (Wheels.Count == 0)
+                Wheels.Add(new WheelViewModel(_picker, _layoutService, _audioService, _logService, "Wheel 1"));
+
+            ActiveWheelIndex = Math.Clamp(idx, 0, Wheels.Count - 1);
+        }
+
+        // ── private helpers ───────────────────────────────────────────────────
+
+        /// <summary>
+        /// Returns a unique name for a clone by stripping any existing " (N)" suffix
+        /// and appending the next available number.
+        /// </summary>
+        private string GenerateCloneName(string sourceName)
+        {
+            var baseName = Regex.Replace(sourceName, @" \(\d+\)$", "");
+            int n = 2;
+            while (Wheels.Any(w => w.Name == $"{baseName} ({n})"))
+                n++;
+            return $"{baseName} ({n})";
         }
     }
 }

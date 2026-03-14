@@ -52,6 +52,14 @@
                     <ListBox.ItemTemplate>
                         <DataTemplate x:DataType="vm:WheelViewModel">
                             <Panel MinWidth="70" Margin="2,0">
+                                <Panel.ContextMenu>
+                                    <ContextMenu>
+                                        <MenuItem Header="Rename" Click="OnTabRenameClick" />
+                                        <MenuItem Header="Clone"  Click="OnTabCloneClick"  />
+                                        <Separator />
+                                        <MenuItem Header="Delete" Click="OnTabDeleteClick" />
+                                    </ContextMenu>
+                                </Panel.ContextMenu>
                                 <!-- Display: double-click (handled in code-behind) starts rename -->
                                 <TextBlock Text="{Binding Name}"
                                            IsVisible="{Binding !IsEditingName}"

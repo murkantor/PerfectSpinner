@@ -80,6 +80,34 @@ namespace GoldenSpinner.Views
             this.AddHandler(KeyDownEvent,   OnRenameKeyDown,   RoutingStrategies.Tunnel);
         }
 
+        // ── Tab context-menu handlers ─────────────────────────────────────────
+
+        private void OnTabRenameClick(object? sender, RoutedEventArgs e)
+        {
+            if (sender is MenuItem { DataContext: WheelViewModel wheel })
+                wheel.BeginRenameCommand.Execute(null);
+        }
+
+        private void OnTabCloneClick(object? sender, RoutedEventArgs e)
+        {
+            if (sender is MenuItem { DataContext: WheelViewModel wheel } &&
+                DataContext is MainWindowViewModel vm)
+                vm.CloneWheel(wheel);
+        }
+
+        private async void OnTabDeleteClick(object? sender, RoutedEventArgs e)
+        {
+            if (sender is not MenuItem { DataContext: WheelViewModel wheel }) return;
+            if (DataContext is not MainWindowViewModel vm) return;
+
+            var confirmed = await new ConfirmDialog(
+                $"Delete \"{wheel.Name}\"? This cannot be undone.")
+                .ShowAsync(this);
+
+            if (confirmed)
+                vm.DeleteWheel(wheel);
+        }
+
         // ── Scroll button handlers ────────────────────────────────────────────
 
         private void OnScrollLeft(object? sender, RoutedEventArgs e)
