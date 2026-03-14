@@ -109,6 +109,7 @@ namespace GoldenSpinner.ViewModels
 
         [ObservableProperty] private bool _showConfetti = false;
         [ObservableProperty] private string? _confettiImagePath;
+        [ObservableProperty] private int _confettiCount = 120;
         /// <summary>0 = Mixed, 1 = Strips, 2 = Circles, 3 = Triangles, 4 = Stars.</summary>
         [ObservableProperty] private int _confettiShapeMode = 0;
         /// <summary>0 = Rainbow, 1 = Custom colour.</summary>
@@ -610,6 +611,7 @@ namespace GoldenSpinner.ViewModels
             BlackoutWheelMode     = BlackoutWheelMode,
             ShowConfetti          = ShowConfetti,
             ConfettiImagePath     = string.IsNullOrEmpty(ConfettiImagePath) ? null : ConfettiImagePath,
+            ConfettiCount         = ConfettiCount,
             ConfettiShapeMode     = ConfettiShapeMode,
             ConfettiColorMode     = ConfettiColorMode,
             ConfettiCustomColor   = ConfettiCustomColor,
@@ -651,6 +653,7 @@ namespace GoldenSpinner.ViewModels
             BlackoutWheelMode     = Math.Clamp(layout.BlackoutWheelMode, 0, 2);
             ShowConfetti          = layout.ShowConfetti;
             ConfettiImagePath     = layout.ConfettiImagePath;
+            ConfettiCount         = Math.Clamp(layout.ConfettiCount == 0 ? 120 : layout.ConfettiCount, 1, 500);
             ConfettiShapeMode     = Math.Clamp(layout.ConfettiShapeMode, 0, 4);
             ConfettiColorMode     = Math.Clamp(layout.ConfettiColorMode, 0, 1);
             ConfettiCustomColor   = string.IsNullOrWhiteSpace(layout.ConfettiCustomColor) ? "#FFD700" : layout.ConfettiCustomColor;

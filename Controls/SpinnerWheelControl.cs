@@ -100,6 +100,10 @@ namespace GoldenSpinner.Controls
         public static readonly StyledProperty<string?> ConfettiImagePathProperty =
             AvaloniaProperty.Register<SpinnerWheelControl, string?>(nameof(ConfettiImagePath));
 
+        /// <summary>Number of confetti particles to spawn. 1–500, default 120.</summary>
+        public static readonly StyledProperty<int> ConfettiCountProperty =
+            AvaloniaProperty.Register<SpinnerWheelControl, int>(nameof(ConfettiCount), 120);
+
         /// <summary>0 = Mixed, 1 = Strips, 2 = Circles, 3 = Triangles, 4 = Stars.</summary>
         public static readonly StyledProperty<int> ConfettiShapeModeProperty =
             AvaloniaProperty.Register<SpinnerWheelControl, int>(nameof(ConfettiShapeMode), 0);
@@ -220,6 +224,12 @@ namespace GoldenSpinner.Controls
         {
             get => GetValue(ConfettiImagePathProperty);
             set => SetValue(ConfettiImagePathProperty, value);
+        }
+
+        public int ConfettiCount
+        {
+            get => GetValue(ConfettiCountProperty);
+            set => SetValue(ConfettiCountProperty, value);
         }
 
         public int ConfettiShapeMode
@@ -364,7 +374,8 @@ namespace GoldenSpinner.Controls
                 catch { customColor = Color.Parse("#FFD700"); }
             }
 
-            for (int i = 0; i < 120; i++)
+            int particleCount = Math.Clamp(ConfettiCount, 1, 500);
+            for (int i = 0; i < particleCount; i++)
             {
                 // Each particle has a personal max spread radius (40–90 % of wheel).
                 // Speed is set so it arrives at maxSpread exactly at the end of its lifetime,

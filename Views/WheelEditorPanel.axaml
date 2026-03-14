@@ -266,6 +266,15 @@
                                                 Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                         </StackPanel>
 
+                        <TextBlock Text="Particle count:"
+                                   Margin="0,4,0,0"
+                                   IsVisible="{Binding ShowConfetti}" />
+                        <NumericUpDown Value="{Binding ConfettiCount}"
+                                       Minimum="1" Maximum="500" Increment="10"
+                                       FormatString="F0"
+                                       IsVisible="{Binding ShowConfetti}"
+                                       ToolTip.Tip="Number of confetti particles (1–500)" />
+
                         <TextBlock Text="Shape:"
                                    Margin="0,4,0,0"
                                    IsVisible="{Binding ShowConfetti}" />

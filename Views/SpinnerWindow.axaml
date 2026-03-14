@@ -44,6 +44,7 @@
                 BlackoutWheelMode="{Binding ActiveWheel.BlackoutWheelMode}"
                 ShowConfetti="{Binding ActiveWheel.ShowConfetti}"
                 ConfettiImagePath="{Binding ActiveWheel.ConfettiImagePath}"
+                ConfettiCount="{Binding ActiveWheel.ConfettiCount}"
                 ConfettiShapeMode="{Binding ActiveWheel.ConfettiShapeMode}"
                 ConfettiColorMode="{Binding ActiveWheel.ConfettiColorMode}"
                 ConfettiCustomColor="{Binding ActiveWheel.ConfettiCustomColor}" />
