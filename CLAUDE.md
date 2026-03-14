@@ -73,6 +73,7 @@ Thin container owning an **unbounded** list of wheels. Users add wheels with the
 | `CloneWheel(source)` | `void` | Deep-copies source via `ToLayout()`/`ApplyLayout()`, names clone with `(2)` suffix, inserts after source, selects it |
 | `DeleteWheel(wheel)` | `void` | Removes wheel; if last, adds a blank "Wheel 1"; adjusts `ActiveWheelIndex` |
 | `GenerateCloneName(name)` | `string` | Strips existing `(N)` suffix via `Regex.Replace`, appends next available `(N)` |
+| `SpinAllCommand` | `IRelayCommand` | Iterates `Wheels`, calls `SpinWheelCommand.Execute` on each that `CanExecute` |
 
 Stores all four services as fields so `AddWheelCommand` and `CloneWheel` can create new `WheelViewModel` instances.
 
@@ -91,6 +92,7 @@ DockPanel
 - `ScrollViewer x:Name="TabScroller"` — wraps ListBox, scrollbar hidden.
 - `◀`/`▶` buttons **navigate between wheel tabs** (decrement/increment `ActiveWheelIndex`), then call `ScrollSelectedTabIntoView()` which posts a `Dispatcher.UIThread.Post` to call `TabList.ScrollIntoView(vm.ActiveWheel)` after layout. This keeps the selected tab visible without exposing the scrollbar.
 - `+` button bound to `AddWheelCommand`.
+- **Spin All Wheels** button (docked between tab bar and editor) — `HorizontalAlignment="Stretch"`, bound to `SpinAllCommand`.
 - **Right-click context menu** on each tab item:
   - **Rename** → calls `wheel.BeginRenameCommand` (puts tab into edit mode)
   - **Clone** → calls `vm.CloneWheel(wheel)` — deep copy with `(2)` suffix
@@ -184,6 +186,13 @@ Walk cumulative slice arcs; first slice where `pointerAngle < cumDeg` wins.
 | `BlackoutWheelMode` | `int` | 0 | 0=off, 1=reveal winner only, 2=reveal all on win |
 | `BorderColorStyle` | `int` | 0 | 0=white borders, 1=black borders |
 
+**Frame-rate property:**
+| Property | Type | Default | Purpose |
+|----------|------|---------|---------|
+| `CapTo30Fps` | `bool` | `false` | 30 ms timer interval instead of 16 ms; for lower-end PCs |
+
+`CapTo30Fps` affects both `SpinWheelAsync` and `StartInertialSpinAsync` (both read it when starting `_animTimer`). Also read by `SpawnConfetti` in `PerfectSpinnerControl` for the confetti timer interval.
+
 ### `SpinnerWindow.axaml.cs`
 
 **Drag-to-spin:**
@@ -242,14 +251,14 @@ Fixed decorations outside clip (aliased, hard edges): outer ring, pointer, centr
 double totalWeight = useWeightedSlices ? active.Sum(s => Math.Max(1.0, s.Weight)) : active.Count;
 ```
 
-**Label outline:** 8-direction 2px offset technique (Avalonia `FormattedText` has no `BuildGeometry`).
+**Label outline:** `FormattedText.BuildGeometry()` produces a `Geometry`; drawn with `s_labelOutlinePenBlack` / `s_labelOutlinePenWhite` (3 px stroke) then the fill text on top. Geometry built once per unique `LabelKey` and cached in `_labelCache`. Positioned via `PushTransform(Matrix.CreateTranslation(cx, cy))` at draw time.
 
 ### `LayoutService.cs`
 - **JSON (`SaveAsync`/`LoadAsync`):** serialises the entire `WheelLayout` object — all fields are always included automatically.
 - **ZIP (`SaveZipAsync`/`LoadZipAsync`):** self-contained (`layout.json` + `img/` + `snd/`), extracted to `%TEMP%\PerfectSpinner\<guid>\` on load. Uses `System.IO.Compression` (no extra packages).
 - **⚠️ ZIP save manually copies every field into a new `WheelLayout`.** Unlike JSON save, new model properties are NOT automatically included — they must be explicitly added to the `zipLayout` initialiser in `SaveZipAsync`. Forgetting a field silently drops it from ZIP saves.
 - Asset paths saved in ZIP: `DefaultSoundPath`, `SpinStartSoundPath`, `TickSound1Path`, `TickSound2Path`, `ConfettiImagePath`.
-- Non-asset fields that must be listed: all appearance, weight, blackout, confetti (count/shape/colour mode/custom colour), winner display fields.
+- Non-asset fields that must be listed: all appearance, weight, blackout, confetti (count/shape/colour mode/custom colour), winner display fields, `CapTo30Fps`.
 
 ### `AudioService.cs` (Windows)
 NAudio `WaveOutEvent` + `AudioFileReader`. **Four independent channels** — none ever interrupts another:
@@ -266,7 +275,7 @@ public void PlaySpinStartSound(string path)               // dedicated channel
 public void PlayTickSound(string path, bool channelB)     // false→A, true→B
 ```
 
-Each channel self-cleans via `PlaybackStopped` lambda (disposes reader). All four channels disposed in `Dispose()`.
+Main and spin-start channels self-clean via `PlaybackStopped` lambda (disposes reader). Tick channels **do not** self-clean — they keep `WaveOutEvent` + `AudioFileReader` alive between crossings for low-latency replay (seek-to-0 pattern). All four channels are disposed in `Dispose()`.
 
 ### `WheelLayout.cs`
 All current fields (beyond the original slices/spin/label/chroma/weight/log):
@@ -282,6 +291,7 @@ public int     ConfettiCount         { get; set; } = 120;
 public int     ConfettiShapeMode     { get; set; } = 0;       // 0=Mixed,1=Strips,2=Circles,3=Triangles,4=Stars
 public int     ConfettiColorMode     { get; set; } = 0;       // 0=Rainbow,1=Custom
 public string  ConfettiCustomColor   { get; set; } = "#FFD700";
+public bool    CapTo30Fps            { get; set; } = false;
 ```
 
 ### `LogService.cs`
@@ -337,6 +347,16 @@ Only ask user to restart when they want to test changes. Never chain `taskkill` 
 3. If CanExecute depends on `SelectedSlice`, add `[NotifyCanExecuteChangedFor(nameof(XyzCommand))]` to `_selectedSlice` field
 4. Bind in AXAML: `Command="{Binding XyzCommand}"`
 
+**Add a new per-wheel setting (full checklist):**
+1. `Models/WheelLayout.cs` — add property with default value
+2. `ViewModels/WheelViewModel.cs` — add `[ObservableProperty]` field + `partial void OnXxxChanged` if needed
+3. `WheelViewModel.ToLayout()` — map property to layout
+4. `WheelViewModel.ApplyLayout()` — restore from layout
+5. `Services/LayoutService.cs` `SaveZipAsync` — add field to `zipLayout` initialiser (**mandatory — not automatic**)
+6. `Views/WheelEditorPanel.axaml` — add UI control in appropriate expander
+7. `Views/SpinnerWindow.axaml` — add binding to `PerfectSpinnerControl` if it affects rendering
+8. `Controls/PerfectSpinnerControl.cs` — add `StyledProperty` + render logic if needed
+
 **Tune spin feel:** `WheelViewModel.cs` — `_windUpSpeed`, `_accelEndTime` (0.10), `_fullSpeedEndTime` (0.80), friction formula, stop threshold (0.5°/s).
 
 **Drawing changes:** `Controls/PerfectSpinnerControl.cs` — `DrawSlices`, `DrawPieSlice`, `DrawSliceLabel`, `DrawSliceImage`, `DrawPointer`.
@@ -362,6 +382,10 @@ Only ask user to restart when they want to test changes. Never chain `taskkill` 
 - **Never forget to update `SaveZipAsync` when adding new `WheelLayout` fields** — JSON save is automatic, but ZIP save manually lists every field. A missing field silently drops on ZIP round-trip with no error.
 - **Do not add `System.Drawing.Common` GIF code paths without a try/catch** — the library is Windows-only since .NET 6 and throws `PlatformNotSupportedException` on Linux/Mac. The confetti GIF loader already handles this; keep the pattern.
 - **`ConfirmDialog` requires a public parameterless constructor** — Avalonia's XAML loader needs it; omitting it raises AVLN3001 at runtime.
+- **No `new Pen(...)`, `new SolidColorBrush(...)`, or `new RenderOptions{...}` inside `Render` or any per-frame method** — allocate as `static readonly` fields and reuse; per-frame allocation causes GC pressure and jank.
+- **No `Color.Parse(...)` in `Render`** — use `slice.CachedColor` (kept in sync by `OnColorHexChanged`).
+- **No per-tick LINQ on `Slices`** — use `GetActiveSlicesCache()` / `_activeTotalWeightCache` in `WheelViewModel`.
+- **No `CapTo30Fps` ignored when adding new timers** — any new `DispatcherTimer` tied to spin or confetti must read `CapTo30Fps ? 33 : 16` for its interval.
 
 ---
 
