@@ -270,7 +270,7 @@
                                    Margin="0,4,0,0"
                                    IsVisible="{Binding ShowConfetti}" />
                         <NumericUpDown Value="{Binding ConfettiCount}"
-                                       Minimum="1" Maximum="500" Increment="10"
+                                       Minimum="1" Maximum="2000" Increment="10"
                                        FormatString="F0"
                                        IsVisible="{Binding ShowConfetti}"
                                        ToolTip.Tip="Number of confetti particles (1–500)" />

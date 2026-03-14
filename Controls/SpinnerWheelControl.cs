@@ -374,7 +374,7 @@ namespace GoldenSpinner.Controls
                 catch { customColor = Color.Parse("#FFD700"); }
             }
 
-            int particleCount = Math.Clamp(ConfettiCount, 1, 500);
+            int particleCount = Math.Clamp(ConfettiCount, 1, 2000);
             for (int i = 0; i < particleCount; i++)
             {
                 // Each particle has a personal max spread radius (40–90 % of wheel).
@@ -405,7 +405,7 @@ namespace GoldenSpinner.Controls
                     Y           = 0,
                     VX          = speed * Math.Cos(angle),
                     VY          = speed * Math.Sin(angle),
-                    BaseSize    = 10 + rng.NextDouble() * 16,
+                    BaseSize    = 16 + rng.NextDouble() * 30,
                     Rotation    = rng.NextDouble() * 360,
                     RotVelocity = (rng.NextDouble() - 0.5) * 720,
                     Age         = 0,

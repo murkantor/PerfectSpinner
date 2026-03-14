@@ -653,7 +653,7 @@ namespace GoldenSpinner.ViewModels
             BlackoutWheelMode     = Math.Clamp(layout.BlackoutWheelMode, 0, 2);
             ShowConfetti          = layout.ShowConfetti;
             ConfettiImagePath     = layout.ConfettiImagePath;
-            ConfettiCount         = Math.Clamp(layout.ConfettiCount == 0 ? 120 : layout.ConfettiCount, 1, 500);
+            ConfettiCount         = Math.Clamp(layout.ConfettiCount == 0 ? 120 : layout.ConfettiCount, 1, 2000);
             ConfettiShapeMode     = Math.Clamp(layout.ConfettiShapeMode, 0, 4);
             ConfettiColorMode     = Math.Clamp(layout.ConfettiColorMode, 0, 1);
             ConfettiCustomColor   = string.IsNullOrWhiteSpace(layout.ConfettiCustomColor) ? "#FFD700" : layout.ConfettiCustomColor;
