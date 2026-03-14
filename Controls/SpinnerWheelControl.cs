@@ -413,17 +413,20 @@ namespace GoldenSpinner.Controls
             int winnerIndex = WinnerIndex;
 
             // ── Pass 2.3: Blackout fill (before borders so borders show on top) ──
+            // Blackout colour is the inverse of the border colour:
+            //   white borders → black fill  |  black borders → white fill
             // Mode 1 (reveal winner only):
-            //   - No winner yet → entire wheel solid black.
+            //   - No winner yet → entire wheel blacked out.
             //   - Winner decided → black out every non-winner slice; winner stays visible.
             // Mode 2 (reveal all on win):
-            //   - No winner yet → entire wheel solid black.
+            //   - No winner yet → entire wheel blacked out.
             //   - Winner decided → normal rendering, no overlay.
+            IBrush blackoutBrush = borderColorStyle == 1 ? Brushes.White : Brushes.Black;
             if (blackoutMode == 1)
             {
                 if (winnerIndex < 0)
                 {
-                    ctx.DrawEllipse(Brushes.Black, null, center, radius, radius);
+                    ctx.DrawEllipse(blackoutBrush, null, center, radius, radius);
                 }
                 else
                 {
@@ -433,14 +436,14 @@ namespace GoldenSpinner.Controls
                         {
                             var geo = BuildSliceGeometry(center, radius,
                                 starts[i] + rotRad, ends[i] + rotRad, n == 1);
-                            ctx.DrawGeometry(Brushes.Black, null, geo);
+                            ctx.DrawGeometry(blackoutBrush, null, geo);
                         }
                     }
                 }
             }
             else if (blackoutMode == 2 && winnerIndex < 0)
             {
-                ctx.DrawEllipse(Brushes.Black, null, center, radius, radius);
+                ctx.DrawEllipse(blackoutBrush, null, center, radius, radius);
             }
 
             // ── Pass 2b: Borders only (aliased — hard crisp lines) ───────────
