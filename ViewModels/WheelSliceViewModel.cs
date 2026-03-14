@@ -1,10 +1,11 @@
-using System;
+﻿using System;
 using System.IO;
+using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using CommunityToolkit.Mvvm.ComponentModel;
-using GoldenSpinner.Models;
+using PerfectSpinner.Models;
 
-namespace GoldenSpinner.ViewModels
+namespace PerfectSpinner.ViewModels
 {
     /// <summary>
     /// Observable wrapper around <see cref="WheelSlice"/> that adds runtime state:
@@ -17,6 +18,12 @@ namespace GoldenSpinner.ViewModels
         [ObservableProperty] private string _label = "Slice";
 
         [ObservableProperty] private string _colorHex = "#3498DB";
+
+        /// <summary>
+        /// Pre-parsed color for the renderer — updated whenever <see cref="ColorHex"/> changes.
+        /// Avoids <c>Color.Parse</c> in the hot render path.
+        /// </summary>
+        public Color CachedColor { get; private set; } = Color.Parse("#3498DB");
 
         [ObservableProperty] private string? _imagePath;
 
@@ -61,11 +68,21 @@ namespace GoldenSpinner.ViewModels
             _winnerLabel = model.WinnerLabel;
             _weight      = Math.Max(0.0, model.Weight);
             _isActive    = model.IsActive;
+            // Pre-parse the cached color (backing field was set directly, no partial method fires).
+            try   { CachedColor = Color.Parse(model.ColorHex); }
+            catch { CachedColor = Color.FromRgb(0x80, 0x80, 0x80); }
             // Use the property setter so the bitmap is loaded immediately.
             ImagePath = model.ImagePath;
         }
 
         // ── Property-change reactions ─────────────────────────────────────────
+
+        /// <summary>Keeps <see cref="CachedColor"/> in sync with <see cref="ColorHex"/>.</summary>
+        partial void OnColorHexChanged(string value)
+        {
+            try   { CachedColor = Color.Parse(value); }
+            catch { CachedColor = Color.FromRgb(0x80, 0x80, 0x80); }
+        }
 
         /// <summary>
         /// Called automatically by CommunityToolkit whenever <see cref="ImagePath"/> changes.

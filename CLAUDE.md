@@ -1,8 +1,8 @@
-# CLAUDE.md — GoldenSpinner / SpinnerWheel
+﻿# CLAUDE.md — PerfectSpinner / SpinnerWheel
 
 ## Identity
-- Solution/project: `GoldenSpinner.sln` / `GoldenSpinner.csproj`
-- Namespace: `GoldenSpinner` | App title: **SpinnerWheel** | Target: `net9.0`
+- Solution/project: `PerfectSpinner.sln` / `PerfectSpinner.csproj`
+- Namespace: `PerfectSpinner` | App title: **PerfectSpinner** | Target: `net9.0`
 - UI: Avalonia 11.3.11 + FluentTheme | MVVM: CommunityToolkit.Mvvm 8.2.1 | Audio: NAudio 2.2.1
 
 ---
@@ -27,8 +27,8 @@ Without this, `ColorView` renders as a grey rectangle — no error thrown.
 ## Architecture
 
 Two windows, one shared `MainWindowViewModel`:
-- `MainWindow` ("SpinnerWheel — Settings") — streamer control panel with a scrollable custom tab bar (one tab per wheel, unlimited wheels).
-- `SpinnerWindow` ("SpinnerWheel — OBS Capture") — OBS Window Capture target, background = `ActiveWheel.ChromaKeyColor` (default `#00FF00`).
+- `MainWindow` ("PerfectSpinner — Settings") — streamer control panel with a scrollable custom tab bar (one tab per wheel, unlimited wheels).
+- `SpinnerWindow` ("PerfectSpinner — OBS Capture") — OBS Window Capture target, background = `ActiveWheel.ChromaKeyColor` (default `#00FF00`).
 
 Switching tabs → `ActiveWheelIndex` → `ActiveWheel` → SpinnerWindow updates instantly.
 
@@ -41,7 +41,7 @@ ViewModels
   WheelSliceViewModel  → wraps WheelSlice (model)
   └── depends on (constructor injection)
 Services: IFilePickerService, LayoutService (JSON+ZIP), AudioService (NAudio/Win), LogService
-Controls: SpinnerWheelControl — custom Control, renders via Render(DrawingContext)
+Controls: PerfectSpinnerControl — custom Control, renders via Render(DrawingContext)
 Models: WheelSlice, WheelLayout — plain C#, JSON-serialisable
 Converters: HexColorToBrushConverter (one-way), ColorToHexConverter (two-way, for ColorView)
 ```
@@ -193,7 +193,7 @@ Walk cumulative slice arcs; first slice where `pointerAngle < cumDeg` wins.
 - `AngleDeg(Point)` — `Math.Atan2(y − h/2, x − w/2) × (180/π)`.
 - `NormalizeDelta(double)` — normalizes to (−180, 180].
 
-### `SpinnerWheelControl.cs`
+### `PerfectSpinnerControl.cs`
 Custom `Control`. All drawing in `Render(DrawingContext)`.
 
 **Rendering pipeline:**
@@ -246,7 +246,7 @@ double totalWeight = useWeightedSlices ? active.Sum(s => Math.Max(1.0, s.Weight)
 
 ### `LayoutService.cs`
 - **JSON (`SaveAsync`/`LoadAsync`):** serialises the entire `WheelLayout` object — all fields are always included automatically.
-- **ZIP (`SaveZipAsync`/`LoadZipAsync`):** self-contained (`layout.json` + `img/` + `snd/`), extracted to `%TEMP%\GoldenSpinner\<guid>\` on load. Uses `System.IO.Compression` (no extra packages).
+- **ZIP (`SaveZipAsync`/`LoadZipAsync`):** self-contained (`layout.json` + `img/` + `snd/`), extracted to `%TEMP%\PerfectSpinner\<guid>\` on load. Uses `System.IO.Compression` (no extra packages).
 - **⚠️ ZIP save manually copies every field into a new `WheelLayout`.** Unlike JSON save, new model properties are NOT automatically included — they must be explicitly added to the `zipLayout` initialiser in `SaveZipAsync`. Forgetting a field silently drops it from ZIP saves.
 - Asset paths saved in ZIP: `DefaultSoundPath`, `SpinStartSoundPath`, `TickSound1Path`, `TickSound2Path`, `ConfettiImagePath`.
 - Non-asset fields that must be listed: all appearance, weight, blackout, confetti (count/shape/colour mode/custom colour), winner display fields.
@@ -314,7 +314,7 @@ Example: `2026-03-14 | 15:42:07 |  4.0 |  5 | 3.7 | Prize 3`
 
 ## Build
 
-**App locks `bin\Debug\net9.0\GoldenSpinner.dll` while running.** Always compile to temp:
+**App locks `bin\Debug\net9.0\PerfectSpinner.dll` while running.** Always compile to temp:
 ```bash
 dotnet build -o C:/Temp/gs-build-check
 ```
@@ -339,7 +339,7 @@ Only ask user to restart when they want to test changes. Never chain `taskkill` 
 
 **Tune spin feel:** `WheelViewModel.cs` — `_windUpSpeed`, `_accelEndTime` (0.10), `_fullSpeedEndTime` (0.80), friction formula, stop threshold (0.5°/s).
 
-**Drawing changes:** `Controls/SpinnerWheelControl.cs` — `DrawSlices`, `DrawPieSlice`, `DrawSliceLabel`, `DrawSliceImage`, `DrawPointer`.
+**Drawing changes:** `Controls/PerfectSpinnerControl.cs` — `DrawSlices`, `DrawPieSlice`, `DrawSliceLabel`, `DrawSliceImage`, `DrawPointer`.
 
 ---
 
@@ -355,10 +355,45 @@ Only ask user to restart when they want to test changes. Never chain `taskkill` 
 - **No auto-deactivate from `OnWeightChanged`** — only post-spin weighted logic may set `IsActive=false`.
 - **No `DataContext="{Binding X}"` on a `TabItem`** with compiled-binding UserControl content — use `ContentTemplate` with `x:DataType`. (Now moot — `TabControl` replaced with `ListBox` + `ContentControl`.)
 - **No `dotnet build` without `-o C:/Temp/gs-build-check` while app is running** — DLL is locked.
-- **No `EdgeMode.Antialias` on `SpinnerWheelControl`** — outer edge must be pixel-hard for chroma key.
+- **No `EdgeMode.Antialias` on `PerfectSpinnerControl`** — outer edge must be pixel-hard for chroma key.
 - **No labels inside `PushTransform(rotMatrix)`** — always draw labels in screen space (Pass 3).
 - **No pointer capture in `SpinnerWindow`** — `e.Pointer.Capture(this)` blocks file dialogs and other window interactions. Drag works without it.
 - **No single tick audio channel** — ticks need two independent channels (A/B) so alternating sounds don't cut each other off at high spin speed.
 - **Never forget to update `SaveZipAsync` when adding new `WheelLayout` fields** — JSON save is automatic, but ZIP save manually lists every field. A missing field silently drops on ZIP round-trip with no error.
 - **Do not add `System.Drawing.Common` GIF code paths without a try/catch** — the library is Windows-only since .NET 6 and throws `PlatformNotSupportedException` on Linux/Mac. The confetti GIF loader already handles this; keep the pattern.
 - **`ConfirmDialog` requires a public parameterless constructor** — Avalonia's XAML loader needs it; omitting it raises AVLN3001 at runtime.
+
+---
+
+## Performance / Render optimisation
+
+These patterns were added to eliminate per-frame allocations and must be maintained as new features are added.
+
+### `PerfectSpinnerControl.cs` caches
+
+| Cache | Field(s) | Invalidation |
+|-------|---------|-------------|
+| Slice arc `StreamGeometry[]` | `_sliceGeoCache`, `_geoGeneration` | `OnCollectionChanged`, `OnSliceChanged` (IsActive/Weight), bounds change |
+| Wheel clip `EllipseGeometry` | `_wheelClipGeo` | Bounds change (checked at top of `Render`) |
+| Pointer `StreamGeometry` | `_pointerGeo` | Bounds change |
+| Slice fill `SolidColorBrush` | `_sliceFillCache` (hex → brush) | Never purged; bounded by slice count |
+| Lightened winner `SolidColorBrush` | `_sliceLightenCache` (hex → brush) | Never purged |
+| Label `FormattedText` + outline `Geometry` | `_labelCache` (LabelKey → LabelCacheEntry) | `OnPropertyChanged` for LabelFont*/LabelColorStyle/LabelBold |
+| Static brushes/pens/`RenderOptions` | `s_*` static readonly fields | Never — truly constant |
+
+**Rules:**
+- **Do NOT call `new Pen(...)`, `new SolidColorBrush(...)`, `Color.Parse(...)` or `new RenderOptions{...}` inside `Render` or any method called per frame.** Use the `s_*` statics or the instance caches.
+- Pass 2.3 (blackout) and Pass 2.5 (overlays) use `PushTransform(rotMatrix)` + cached unrotated geometries. Do not revert to building rotated geometries for those passes.
+- Pass 1 (screen-space image clip) is the one exception — it builds a `BuildStreamSliceGeometry` call with `starts[i]+rotRad` because the image is drawn in screen space outside a transform. This is acceptable (only runs on slices that have images).
+- `FormattedText.BuildGeometry` is expensive. The label cache builds geometry at `(0,0)` once; `PushTransform(Matrix.CreateTranslation(...))` positions it at draw time.
+- `ConfettiParticle` stores rotation in **radians** (`RotationRad`, `RotVelocityRad`) and carries a pre-created `SolidColorBrush Brush`. Do not add per-frame conversions or brush allocations inside the confetti render loop.
+- Confetti rotation matrix is composed as a single `new Matrix(cos,sin,-sin,cos,tx,ty)`. Do not revert to the three-call `CreateTranslation * CreateRotation * CreateTranslation` pattern.
+
+### `WheelSliceViewModel.cs`
+- `CachedColor` (type `Color`) is kept in sync with `ColorHex` via `partial void OnColorHexChanged`. **Never call `Color.Parse(slice.ColorHex)` in the renderer** — always read `slice.CachedColor`.
+
+### `WheelViewModel.cs`
+- `_activeSlicesCache` / `_activeTotalWeightCache` eliminate the per-tick `.Where().ToList()` + `.Sum()` allocations in `OnAnimationTick`. The cache is invalidated via `OnSlicesCollectionChangedForCache` and `OnSlicePropertyChangedForCache` (IsActive/Weight changes). **Do not add new per-tick LINQ on `Slices`** — use `GetActiveSlicesCache()`.
+
+### `AudioService.cs`
+- Tick channels A and B keep their `WaveOutEvent` and `AudioFileReader` alive between crossings. `PlayTickChannel` only rebuilds if the path changes; otherwise it stops, seeks to 0, and replays. **Do not dispose tick channels inside `PlayTickSound`.**

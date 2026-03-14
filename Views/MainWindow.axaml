@@ -1,15 +1,15 @@
-<Window xmlns="https://github.com/avaloniaui"
+﻿<Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:vm="using:GoldenSpinner.ViewModels"
-        xmlns:views="using:GoldenSpinner.Views"
+        xmlns:vm="using:PerfectSpinner.ViewModels"
+        xmlns:views="using:PerfectSpinner.Views"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d"
-        x:Class="GoldenSpinner.Views.MainWindow"
+        x:Class="PerfectSpinner.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
         d:DesignWidth="940" d:DesignHeight="830"
         Icon="/Assets/avalonia-logo.ico"
-        Title="SpinnerWheel — Settings"
+        Title="PerfectSpinner — Settings"
         MinWidth="640" MinHeight="480"
         Width="940" Height="830">
 
@@ -17,7 +17,12 @@
 
         <!-- ── Header ──────────────────────────────────────────────────── -->
         <StackPanel DockPanel.Dock="Top" Spacing="6" Margin="0,0,0,8">
-            <TextBlock Text="SpinnerWheel" FontSize="20" FontWeight="Bold" />
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                <TextBlock Text="PerfectSpinner" FontSize="20" FontWeight="Bold" />
+                <TextBlock Text=" - By Murk17" FontSize="15" FontStyle="Italic"
+                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                           VerticalAlignment="Bottom" Margin="4,0,0,1" Padding="0,0,6,0" />
+            </StackPanel>
             <Separator />
         </StackPanel>
 

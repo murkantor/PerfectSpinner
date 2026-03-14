@@ -1,9 +1,9 @@
-using System;
+﻿using System;
 using System.Diagnostics;
 using System.IO;
 using NAudio.Wave;
 
-namespace GoldenSpinner.Services
+namespace PerfectSpinner.Services
 {
     /// <summary>
     /// Audio playback service.
@@ -26,10 +26,15 @@ namespace GoldenSpinner.Services
         // ── Windows playback (NAudio) — two tick channels (A and B) ─────────
         //    Sound 1 always plays on channel A, sound 2 always plays on channel B.
         //    Neither channel ever stops the other, so fast spins don't cut sounds off.
+        //    Readers and WaveOutEvents are kept alive between crossings; only the path
+        //    change triggers a full reload.  Each crossing just seeks to 0 and replays,
+        //    eliminating the per-crossing file-open and device-handle creation cost.
         private WaveOutEvent? _tickWaveOutA;
         private WaveStream?   _tickReaderA;
+        private string?       _tickPathA;
         private WaveOutEvent? _tickWaveOutB;
         private WaveStream?   _tickReaderB;
+        private string?       _tickPathB;
 
         // ── macOS / Linux playback (external process) ─────────────────────────
         private Process? _currentProcess;
@@ -92,52 +97,54 @@ namespace GoldenSpinner.Services
         /// <paramref name="channelB"/> selects which channel to use — alternate this on every
         /// crossing so that neither sound ever stops the other, even at high spin speeds.
         /// Does not interrupt the main winner-sound channel.
+        /// The WaveOutEvent and reader are kept alive between crossings; each call just
+        /// seeks back to position 0 and replays, avoiding per-crossing file I/O and
+        /// audio device handle creation.
         /// </summary>
         public void PlayTickSound(string path, bool channelB)
         {
             if (string.IsNullOrEmpty(path) || !File.Exists(path)) return;
-
-            if (!OperatingSystem.IsWindows()) return; // macOS/Linux: skip rather than spawn processes
+            if (!OperatingSystem.IsWindows()) return;
 
             try
             {
                 if (channelB)
-                {
-                    // Restart channel B only (channel A keeps playing)
-                    _tickWaveOutB?.Stop();
-                    _tickWaveOutB?.Dispose();
-                    _tickReaderB?.Dispose();
-                    _tickReaderB  = new AudioFileReader(path);
-                    _tickWaveOutB = new WaveOutEvent();
-                    _tickWaveOutB.Init(_tickReaderB);
-                    _tickWaveOutB.PlaybackStopped += (_, _) =>
-                    {
-                        _tickWaveOutB?.Dispose(); _tickWaveOutB = null;
-                        _tickReaderB?.Dispose();  _tickReaderB  = null;
-                    };
-                    _tickWaveOutB.Play();
-                }
+                    PlayTickChannel(path, ref _tickWaveOutB, ref _tickReaderB, ref _tickPathB);
                 else
-                {
-                    // Restart channel A only (channel B keeps playing)
-                    _tickWaveOutA?.Stop();
-                    _tickWaveOutA?.Dispose();
-                    _tickReaderA?.Dispose();
-                    _tickReaderA  = new AudioFileReader(path);
-                    _tickWaveOutA = new WaveOutEvent();
-                    _tickWaveOutA.Init(_tickReaderA);
-                    _tickWaveOutA.PlaybackStopped += (_, _) =>
-                    {
-                        _tickWaveOutA?.Dispose(); _tickWaveOutA = null;
-                        _tickReaderA?.Dispose();  _tickReaderA  = null;
-                    };
-                    _tickWaveOutA.Play();
-                }
+                    PlayTickChannel(path, ref _tickWaveOutA, ref _tickReaderA, ref _tickPathA);
             }
             catch (Exception ex)
             {
                 Debug.WriteLine($"[AudioService] Tick playback failed: {ex.Message}");
             }
+        }
+
+        private static void PlayTickChannel(
+            string path,
+            ref WaveOutEvent? waveOut,
+            ref WaveStream?   reader,
+            ref string?       loadedPath)
+        {
+            // Reload only when the path has changed.
+            if (loadedPath != path)
+            {
+                waveOut?.Stop();
+                waveOut?.Dispose();
+                reader?.Dispose();
+                waveOut     = null;
+                reader      = null;
+                loadedPath  = null;
+
+                reader    = new AudioFileReader(path);
+                waveOut   = new WaveOutEvent();
+                waveOut.Init(reader);
+                loadedPath = path;
+            }
+
+            // Seek to the start and play from the beginning of the sound.
+            waveOut!.Stop();
+            reader!.Position = 0;
+            waveOut.Play();
         }
 
         /// <summary>Stops any currently playing sound.</summary>
@@ -213,6 +220,7 @@ namespace GoldenSpinner.Services
             _spinStartWaveOut?.Stop(); _spinStartWaveOut?.Dispose(); _spinStartReader?.Dispose();
             _tickWaveOutA?.Stop(); _tickWaveOutA?.Dispose(); _tickReaderA?.Dispose();
             _tickWaveOutB?.Stop(); _tickWaveOutB?.Dispose(); _tickReaderB?.Dispose();
+            _tickPathA = null; _tickPathB = null;
         }
     }
 }

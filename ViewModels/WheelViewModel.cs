@@ -1,15 +1,17 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Collections.Specialized;
+using System.ComponentModel;
 using System.Linq;
 using System.Threading.Tasks;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using GoldenSpinner.Models;
-using GoldenSpinner.Services;
+using PerfectSpinner.Models;
+using PerfectSpinner.Services;
 
-namespace GoldenSpinner.ViewModels
+namespace PerfectSpinner.ViewModels
 {
     /// <summary>
     /// All state and logic for a single spinner wheel — slices, spin animation,
@@ -160,6 +162,13 @@ namespace GoldenSpinner.ViewModels
         private int  _lastTickSliceIndex = -1;
         private bool _tickSoundToggle    = false;
 
+        // ── Active-slice cache ────────────────────────────────────────────────
+        // Rebuilt lazily when IsActive or Weight changes; avoids .Where().ToList()
+        // + .Sum() lambda allocations on every animation tick (60×/s).
+
+        private List<WheelSliceViewModel>? _activeSlicesCache;
+        private double                     _activeTotalWeightCache;
+
         // ── Default palette ───────────────────────────────────────────────────
 
         private static readonly string[] PaletteColors =
@@ -185,6 +194,7 @@ namespace GoldenSpinner.ViewModels
             _logService    = logService;
             Name           = name;
             AddDefaultSlices();
+            Slices.CollectionChanged += OnSlicesCollectionChangedForCache;
         }
 
         /// <summary>Design-time constructor — services are null and must not be invoked.</summary>
@@ -196,6 +206,7 @@ namespace GoldenSpinner.ViewModels
             _logService    = null!;
             Name           = "Design Wheel";
             AddDefaultSlices();
+            Slices.CollectionChanged += OnSlicesCollectionChangedForCache;
         }
 
         // ── CanExecute predicates ─────────────────────────────────────────────
@@ -741,13 +752,11 @@ namespace GoldenSpinner.ViewModels
             CurrentRotation += _currentVelocity * dt;
 
             // ── Tick sound on each slice border crossing ───────────────────────
-            var tickActive = Slices.Where(s => s.IsActive).ToList();
+            var tickActive = GetActiveSlicesCache();
             if (tickActive.Count > 1 &&
                 (!string.IsNullOrEmpty(TickSound1Path) || !string.IsNullOrEmpty(TickSound2Path)))
             {
-                double tickTotalW = UseWeightedSlices
-                    ? tickActive.Sum(s => Math.Max(1.0, s.Weight))
-                    : tickActive.Count;
+                double tickTotalW = _activeTotalWeightCache;
 
                 double ptr = ((360.0 - CurrentRotation % 360.0) % 360.0 + 360.0) % 360.0;
                 int currentSlice = tickActive.Count - 1;
@@ -772,6 +781,50 @@ namespace GoldenSpinner.ViewModels
                 }
                 _lastTickSliceIndex = currentSlice;
             }
+        }
+
+        // ── Active-slice cache helpers ────────────────────────────────────────
+
+        private List<WheelSliceViewModel> GetActiveSlicesCache()
+        {
+            if (_activeSlicesCache != null) return _activeSlicesCache;
+
+            _activeSlicesCache = new List<WheelSliceViewModel>(Slices.Count);
+            foreach (var s in Slices)
+                if (s.IsActive) _activeSlicesCache.Add(s);
+
+            _activeTotalWeightCache = UseWeightedSlices
+                ? SumActiveWeights(_activeSlicesCache)
+                : _activeSlicesCache.Count;
+
+            return _activeSlicesCache;
+        }
+
+        private static double SumActiveWeights(List<WheelSliceViewModel> list)
+        {
+            double total = 0;
+            foreach (var s in list) total += Math.Max(1.0, s.Weight);
+            return total;
+        }
+
+        private void InvalidateActiveCache() => _activeSlicesCache = null;
+
+        private void OnSlicesCollectionChangedForCache(
+            object? sender, NotifyCollectionChangedEventArgs e)
+        {
+            if (e.OldItems != null)
+                foreach (WheelSliceViewModel s in e.OldItems)
+                    s.PropertyChanged -= OnSlicePropertyChangedForCache;
+            if (e.NewItems != null)
+                foreach (WheelSliceViewModel s in e.NewItems)
+                    s.PropertyChanged += OnSlicePropertyChangedForCache;
+            InvalidateActiveCache();
+        }
+
+        private void OnSlicePropertyChangedForCache(object? sender, PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName is nameof(WheelSliceViewModel.IsActive) or nameof(WheelSliceViewModel.Weight))
+                InvalidateActiveCache();
         }
 
         private void FinishSpin()
