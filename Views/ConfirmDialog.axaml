@@ -1,6 +1,6 @@
-<Window xmlns="https://github.com/avaloniaui"
+﻿<Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        x:Class="GoldenSpinner.Views.ConfirmDialog"
+        x:Class="PerfectSpinner.Views.ConfirmDialog"
         Title="Confirm"
         Width="360" Height="150"
         WindowStartupLocation="CenterOwner"

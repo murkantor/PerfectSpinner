@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Linq;
@@ -8,10 +8,10 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.VisualTree;
-using GoldenSpinner.Services;
-using GoldenSpinner.ViewModels;
+using PerfectSpinner.Services;
+using PerfectSpinner.ViewModels;
 
-namespace GoldenSpinner.Views
+namespace PerfectSpinner.Views
 {
     /// <summary>
     /// The Settings window — controls, slice editor, and layout I/O.

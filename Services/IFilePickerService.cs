@@ -1,6 +1,6 @@
-using System.Threading.Tasks;
+﻿using System.Threading.Tasks;
 
-namespace GoldenSpinner.Services
+namespace PerfectSpinner.Services
 {
     /// <summary>
     /// Abstraction over platform file-picker dialogs.

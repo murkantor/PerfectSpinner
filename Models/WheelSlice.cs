@@ -1,6 +1,6 @@
-using System;
+﻿using System;
 
-namespace GoldenSpinner.Models
+namespace PerfectSpinner.Models
 {
     /// <summary>
     /// Data model for a single slice on the spinner wheel.

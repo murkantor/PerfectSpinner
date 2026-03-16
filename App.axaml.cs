@@ -1,11 +1,11 @@
-using System.Linq;
+﻿using System.Linq;
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Data.Core.Plugins;
 using Avalonia.Markup.Xaml;
-using GoldenSpinner.Views;
+using PerfectSpinner.Views;
 
-namespace GoldenSpinner
+namespace PerfectSpinner
 {
     public partial class App : Application
     {

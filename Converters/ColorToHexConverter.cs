@@ -1,9 +1,9 @@
-using System;
+﻿using System;
 using System.Globalization;
 using Avalonia.Data.Converters;
 using Avalonia.Media;
 
-namespace GoldenSpinner.Converters
+namespace PerfectSpinner.Converters
 {
     /// <summary>
     /// Two-way converter between a CSS hex colour string (e.g. "#00B140") and

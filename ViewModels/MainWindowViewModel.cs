@@ -1,12 +1,12 @@
-using System;
+﻿using System;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Text.RegularExpressions;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using GoldenSpinner.Services;
+using PerfectSpinner.Services;
 
-namespace GoldenSpinner.ViewModels
+namespace PerfectSpinner.ViewModels
 {
     /// <summary>
     /// Top-level ViewModel — owns an unbounded list of <see cref="WheelViewModel"/> instances
@@ -53,6 +53,14 @@ namespace GoldenSpinner.ViewModels
         {
             if (value < 0 && Wheels.Count > 0)
                 ActiveWheelIndex = 0;
+        }
+
+        [RelayCommand]
+        private void SpinAll()
+        {
+            foreach (var wheel in Wheels)
+                if (wheel.SpinWheelCommand.CanExecute(null))
+                    wheel.SpinWheelCommand.Execute(null);
         }
 
         [RelayCommand]

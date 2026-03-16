@@ -1,6 +1,6 @@
 ﻿using CommunityToolkit.Mvvm.ComponentModel;
 
-namespace GoldenSpinner.ViewModels
+namespace PerfectSpinner.ViewModels
 {
     public abstract class ViewModelBase : ObservableObject
     {

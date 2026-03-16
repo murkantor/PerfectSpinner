@@ -89,6 +89,15 @@
 
         </Grid>
 
+        <!-- ── Spin All ─────────────────────────────────────────────────── -->
+        <Button DockPanel.Dock="Top"
+                Content="🎡  Spin All Wheels"
+                Command="{Binding SpinAllCommand}"
+                HorizontalAlignment="Stretch"
+                FontSize="15" FontWeight="SemiBold"
+                Padding="0,8" Margin="0,0,0,6"
+                ToolTip.Tip="Spin every wheel tab simultaneously" />
+
         <!-- ── Active wheel editor ──────────────────────────────────────── -->
         <ContentControl Content="{Binding ActiveWheel}">
             <ContentControl.ContentTemplate>

@@ -1,8 +1,8 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Threading.Tasks;
 
-namespace GoldenSpinner.Services
+namespace PerfectSpinner.Services
 {
     /// <summary>
     /// Appends spin results to ./logs/spins.log (relative to the executable).

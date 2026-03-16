@@ -1,10 +1,10 @@
-using System;
+﻿using System;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
-using GoldenSpinner.ViewModels;
+using PerfectSpinner.ViewModels;
 
-namespace GoldenSpinner.Views
+namespace PerfectSpinner.Views
 {
     /// <summary>
     /// The wheel-only capture window intended for OBS "Window Capture".

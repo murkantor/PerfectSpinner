@@ -1,9 +1,9 @@
-using System;
+﻿using System;
 using System.Globalization;
 using Avalonia.Data.Converters;
 using Avalonia.Media;
 
-namespace GoldenSpinner.Converters
+namespace PerfectSpinner.Converters
 {
     /// <summary>
     /// Converts a CSS hex color string (e.g. "#E74C3C") to an Avalonia <see cref="SolidColorBrush"/>.

@@ -1,13 +1,13 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
-using GoldenSpinner.Models;
+using PerfectSpinner.Models;
 
-namespace GoldenSpinner.Services
+namespace PerfectSpinner.Services
 {
     /// <summary>
     /// Saves and loads <see cref="WheelLayout"/> objects.
@@ -24,7 +24,7 @@ namespace GoldenSpinner.Services
     ///            Fully portable — share the .zip and everything just works.
     ///
     /// When a .zip is loaded, assets are extracted to a per-session temp folder under
-    /// %TEMP%/GoldenSpinner/<guid>/ so that existing image/sound loading code is unchanged.
+    /// %TEMP%/PerfectSpinner/<guid>/ so that existing image/sound loading code is unchanged.
     /// </summary>
     public sealed class LayoutService
     {
@@ -109,6 +109,8 @@ namespace GoldenSpinner.Services
                 UseWeightedSlices     = layout.UseWeightedSlices,
                 GlobalWeight          = layout.GlobalWeight,
                 LogSpins              = layout.LogSpins,
+                CapTo30Fps            = layout.CapTo30Fps,
+                PointerOnRight        = layout.PointerOnRight,
                 WinnerMessageTemplate = layout.WinnerMessageTemplate,
                 DefaultSoundPath      = AssignEntry(layout.DefaultSoundPath, "snd", soundMap),
                 BrightenWinner        = layout.BrightenWinner,
@@ -155,7 +157,7 @@ namespace GoldenSpinner.Services
             try
             {
                 var tempDir = Path.Combine(
-                    Path.GetTempPath(), "GoldenSpinner", Guid.NewGuid().ToString("N"));
+                    Path.GetTempPath(), "PerfectSpinner", Guid.NewGuid().ToString("N"));
                 Directory.CreateDirectory(tempDir);
 
                 // Extract everything — images, sounds, layout.json

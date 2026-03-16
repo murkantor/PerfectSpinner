@@ -1,10 +1,10 @@
-using System;
+﻿using System;
 using System.Diagnostics.CodeAnalysis;
 using Avalonia.Controls;
 using Avalonia.Controls.Templates;
-using GoldenSpinner.ViewModels;
+using PerfectSpinner.ViewModels;
 
-namespace GoldenSpinner
+namespace PerfectSpinner
 {
     /// <summary>
     /// Given a view model, returns the corresponding view if possible.

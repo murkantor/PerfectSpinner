@@ -116,6 +116,14 @@ namespace PerfectSpinner.Controls
         public static readonly StyledProperty<string> ConfettiCustomColorProperty =
             AvaloniaProperty.Register<PerfectSpinnerControl, string>(nameof(ConfettiCustomColor), "#FFD700");
 
+        /// <summary>When true, confetti timer runs at ~30 fps instead of ~60 fps.</summary>
+        public static readonly StyledProperty<bool> CapTo30FpsProperty =
+            AvaloniaProperty.Register<PerfectSpinnerControl, bool>(nameof(CapTo30Fps), false);
+
+        /// <summary>When true, the pointer sits at 3 o'clock (right) and labels rotate with the wheel.</summary>
+        public static readonly StyledProperty<bool> PointerOnRightProperty =
+            AvaloniaProperty.Register<PerfectSpinnerControl, bool>(nameof(PointerOnRight), false);
+
         // ── Property accessors ───────────────────────────────────────────────
 
         public ObservableCollection<WheelSliceViewModel>? Slices
@@ -250,6 +258,18 @@ namespace PerfectSpinner.Controls
             set => SetValue(ConfettiCustomColorProperty, value);
         }
 
+        public bool CapTo30Fps
+        {
+            get => GetValue(CapTo30FpsProperty);
+            set => SetValue(CapTo30FpsProperty, value);
+        }
+
+        public bool PointerOnRight
+        {
+            get => GetValue(PointerOnRightProperty);
+            set => SetValue(PointerOnRightProperty, value);
+        }
+
         // ── Constructor ───────────────────────────────────────────────────────
 
         public PerfectSpinnerControl()
@@ -272,7 +292,8 @@ namespace PerfectSpinner.Controls
                 ShowLabelsProperty, LabelFontFamilyProperty,
                 LabelFontSizeProperty, LabelColorStyleProperty, LabelBoldProperty,
                 BrightenWinnerProperty, DarkenLosersProperty, InvertLoserTextProperty,
-                ShowPointerLabelProperty, BorderColorStyleProperty, BlackoutWheelModeProperty);
+                ShowPointerLabelProperty, BorderColorStyleProperty, BlackoutWheelModeProperty,
+                PointerOnRightProperty);
         }
 
         // ── Unit geometries for confetti shapes ───────────────────────────────
@@ -410,6 +431,7 @@ namespace PerfectSpinner.Controls
         private EllipseGeometry? _wheelClipGeo;
         private double           _lastPointerCx = double.NaN, _lastPointerCy = double.NaN;
         private double           _lastPointerRadius = double.NaN;
+        private bool             _lastPointerOnRight;
 
         // Per-hex-colour brush cache — avoids new SolidColorBrush per slice per frame.
         private readonly Dictionary<string, SolidColorBrush> _sliceFillCache    = new();
@@ -497,7 +519,7 @@ namespace PerfectSpinner.Controls
             _confettiTimer?.Stop();
             _confettiTimer = new DispatcherTimer(DispatcherPriority.Render)
             {
-                Interval = TimeSpan.FromMilliseconds(16)
+                Interval = TimeSpan.FromMilliseconds(CapTo30Fps ? 33 : 16)
             };
             _confettiTimer.Tick += OnConfettiTick;
             _confettiTimer.Start();
@@ -718,10 +740,11 @@ namespace PerfectSpinner.Controls
             var center = new Point(cx, cy);
             var radius = size / 2 - 18;
 
+            bool pointerOnRightEarly = PointerOnRight;
             if (slices == null || slices.Count == 0)
             {
                 DrawEmptyWheel(ctx, center, radius);
-                DrawPointer(ctx, center, radius);
+                DrawPointer(ctx, center, radius, pointerOnRightEarly);
                 return;
             }
 
@@ -734,7 +757,7 @@ namespace PerfectSpinner.Controls
                 IBrush emptyBorderBrush = BorderColorStyle == 1 ? Brushes.Black : Brushes.White;
                 DrawEmptyWheel(ctx, center, radius);
                 DrawOuterRing(ctx, center, radius, borderColorStyle: BorderColorStyle);
-                DrawPointer(ctx, center, radius);
+                DrawPointer(ctx, center, radius, pointerOnRightEarly);
                 DrawCenterPin(ctx, center, emptyBorderBrush, s_defaultDotBrush);
                 return;
             }
@@ -754,6 +777,7 @@ namespace PerfectSpinner.Controls
             bool   showPointerLabel = ShowPointerLabel;
             int    borderColorStyle = BorderColorStyle;
             int    blackoutMode     = BlackoutWheelMode;
+            bool   pointerOnRight   = PointerOnRight;
             IBrush borderBrush      = borderColorStyle == 1 ? Brushes.Black : Brushes.White;
 
             // Pre-compute per-slice angles.
@@ -966,19 +990,19 @@ namespace PerfectSpinner.Controls
                     bool isLoser = !isWinner[i] && winnerIndex >= 0;
                     DrawSliceLabel(ctx, active[i].Label, labelCenter, n,
                         labelFont, labelFontSize, labelColorStyle, labelBold,
-                        textMatchesBorder: isLoser && invertLoserText);
+                        textMatchesBorder: isLoser && invertLoserText,
+                        rotationAngle: pointerOnRight ? screenMid : 0.0);
                 }
             }
 
-            // ── Pass 4: Pointer label — slice name just inside the top edge ──────
+            // ── Pass 4: Pointer label — slice name just inside the pointer edge ──
             // Drawn inside the wheel clip so it can't overflow the circle boundary.
-            // Position is 28 px below the wheel's top edge (pointer tip is at +2 px).
             if (showPointerLabel && n > 0)
             {
-                // Find which active slice is currently under the fixed pointer (12 o'clock).
-                // In the unrotated wheel frame the pointer sits at -PI/2.
-                // Normalise into [starts[0], starts[0] + 2*PI).
-                double pAngle = -Math.PI / 2.0 - rotRad;
+                // Pointer screen-space angle: -PI/2 (top) or 0 (right).
+                // Subtract rotRad to get the pointer position in the unrotated wheel frame.
+                double pointerCanvasAngle = pointerOnRight ? 0.0 : -Math.PI / 2.0;
+                double pAngle = pointerCanvasAngle - rotRad;
                 double span   = 2 * Math.PI;
                 double norm   = ((pAngle - starts[0]) % span + span) % span + starts[0];
 
@@ -994,7 +1018,9 @@ namespace PerfectSpinner.Controls
 
                 if (!string.IsNullOrEmpty(pLabel))
                 {
-                    var labelPos = new Point(center.X, center.Y - radius + 28);
+                    var labelPos = pointerOnRight
+                        ? new Point(center.X + radius - 28, center.Y)
+                        : new Point(center.X, center.Y - radius + 28);
                     DrawSliceLabel(ctx, pLabel, labelPos, n,
                         labelFont, labelFontSize, labelColorStyle, labelBold);
                 }
@@ -1086,10 +1112,10 @@ namespace PerfectSpinner.Controls
             // ── Fixed layer — drawn outside the clip with hard edges ──────────
             // These sit on the chroma key boundary so they must remain pixel-hard.
 
-            // Determine which active slice is currently under the fixed pointer (12 o'clock).
-            // The pointer sits at -π/2 in screen space; subtract rotRad to get wheel-frame angle.
-            // When blackout is active the centre dot stays a fixed inverted-border colour
-            // so it doesn't reveal which slice is under the pointer.
+            // Determine which active slice is currently under the fixed pointer.
+            // The pointer sits at -π/2 (top) or 0 (right) in screen space; subtract rotRad to
+            // get the wheel-frame angle. When blackout is active the centre dot stays a fixed
+            // inverted-border colour so it doesn't reveal which slice is under the pointer.
             // borderColorStyle 0 = white border → black dot; 1 = black border → white dot.
             IBrush dotBrush;
             if (blackoutMode > 0)
@@ -1101,12 +1127,12 @@ namespace PerfectSpinner.Controls
                 dotBrush = s_defaultDotBrush; // default red
                 if (n > 0)
                 {
-                    double pAngle = -Math.PI / 2.0 - rotRad;
-                    double span   = 2 * Math.PI;
-                    double norm   = ((pAngle - starts[0]) % span + span) % span + starts[0];
+                    double dotPointerAngle = (pointerOnRight ? 0.0 : -Math.PI / 2.0) - rotRad;
+                    double dotSpan         = 2 * Math.PI;
+                    double dotNorm         = ((dotPointerAngle - starts[0]) % dotSpan + dotSpan) % dotSpan + starts[0];
                     for (int i = 0; i < n; i++)
                     {
-                        if (norm >= starts[i] && norm < ends[i])
+                        if (dotNorm >= starts[i] && dotNorm < ends[i])
                         {
                             dotBrush = GetSliceFillBrush(active[i]);
                             break;
@@ -1116,7 +1142,7 @@ namespace PerfectSpinner.Controls
             }
 
             DrawOuterRing(ctx, center, radius, borderColorStyle: borderColorStyle);
-            DrawPointer(ctx, center, radius);
+            DrawPointer(ctx, center, radius, pointerOnRight);
             DrawCenterPin(ctx, center, borderBrush, dotBrush);
         }
 
@@ -1200,7 +1226,7 @@ namespace PerfectSpinner.Controls
         /// </summary>
         private void DrawSliceLabel(DrawingContext ctx, string label, Point labelCenter,
             int sliceCount, string fontFamily, double fontSize, int colorStyle, bool bold,
-            bool textMatchesBorder = false)
+            bool textMatchesBorder = false, double rotationAngle = 0.0)
         {
             // Font size: manual override or auto-scale by slice count.
             double size = fontSize > 0
@@ -1241,11 +1267,15 @@ namespace PerfectSpinner.Controls
             }
 
             var outlinePen = colorStyle == 1 ? s_labelOutlinePenWhite : s_labelOutlinePenBlack;
-            double ox = labelCenter.X - entry.HalfW;
-            double oy = labelCenter.Y - entry.HalfH;
 
-            // Translate to the label position, draw outline then fill.
-            using (ctx.PushTransform(Matrix.CreateTranslation(ox, oy)))
+            // Build the label transform: centre text at origin, rotate, then translate to position.
+            // When rotationAngle == 0 this collapses to a plain translation (no extra cost).
+            var labelTransform =
+                Matrix.CreateTranslation(-entry.HalfW, -entry.HalfH) *
+                Matrix.CreateRotation(rotationAngle) *
+                Matrix.CreateTranslation(labelCenter.X, labelCenter.Y);
+
+            using (ctx.PushTransform(labelTransform))
             {
                 ctx.DrawGeometry(null, outlinePen, entry.OutlineGeo);
                 ctx.DrawText(entry.MainFt, new Point(0, 0));
@@ -1260,31 +1290,45 @@ namespace PerfectSpinner.Controls
             ctx.DrawEllipse(null, pen, center, radius, radius);
         }
 
-        private void DrawPointer(DrawingContext ctx, Point center, double radius)
+        private void DrawPointer(DrawingContext ctx, Point center, double radius, bool pointerOnRight)
         {
             const double hs = 11.0;
             const double h  = 20.0;
 
-            var tipY  = center.Y - radius + 2;
-            var baseY = tipY - h;
-
-            // Rebuild the pointer geometry only when the wheel bounds change.
+            // Rebuild the pointer geometry only when bounds or side changes.
             if (_pointerGeo == null
                 || center.X != _lastPointerCx || center.Y != _lastPointerCy
-                || radius   != _lastPointerRadius)
+                || radius   != _lastPointerRadius
+                || pointerOnRight != _lastPointerOnRight)
             {
                 var geo = new StreamGeometry();
                 using (var gc = geo.Open())
                 {
-                    gc.BeginFigure(new Point(center.X - hs, baseY), true);
-                    gc.LineTo(new Point(center.X + hs, baseY));
-                    gc.LineTo(new Point(center.X, tipY));
+                    if (pointerOnRight)
+                    {
+                        // Triangle pointing LEFT into the wheel at 3 o'clock.
+                        var tipX  = center.X + radius - 2;
+                        var baseX = tipX + h;
+                        gc.BeginFigure(new Point(baseX, center.Y - hs), true);
+                        gc.LineTo(new Point(baseX, center.Y + hs));
+                        gc.LineTo(new Point(tipX, center.Y));
+                    }
+                    else
+                    {
+                        // Triangle pointing DOWN into the wheel at 12 o'clock.
+                        var tipY  = center.Y - radius + 2;
+                        var baseY = tipY - h;
+                        gc.BeginFigure(new Point(center.X - hs, baseY), true);
+                        gc.LineTo(new Point(center.X + hs, baseY));
+                        gc.LineTo(new Point(center.X, tipY));
+                    }
                     gc.EndFigure(true);
                 }
-                _pointerGeo        = geo;
-                _lastPointerCx     = center.X;
-                _lastPointerCy     = center.Y;
-                _lastPointerRadius = radius;
+                _pointerGeo          = geo;
+                _lastPointerCx       = center.X;
+                _lastPointerCy       = center.Y;
+                _lastPointerRadius   = radius;
+                _lastPointerOnRight  = pointerOnRight;
             }
 
             ctx.DrawGeometry(s_pointerFillBrush, s_pointerOutlinePen, _pointerGeo);

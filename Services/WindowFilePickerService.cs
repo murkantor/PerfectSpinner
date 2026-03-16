@@ -1,10 +1,10 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Platform.Storage;
 
-namespace GoldenSpinner.Services
+namespace PerfectSpinner.Services
 {
     /// <summary>
     /// Implements <see cref="IFilePickerService"/> using Avalonia's cross-platform

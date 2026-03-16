@@ -1,10 +1,10 @@
-<UserControl xmlns="https://github.com/avaloniaui"
+﻿<UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:vm="using:GoldenSpinner.ViewModels"
+             xmlns:vm="using:PerfectSpinner.ViewModels"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              mc:Ignorable="d"
-             x:Class="GoldenSpinner.Views.WheelEditorPanel"
+             x:Class="PerfectSpinner.Views.WheelEditorPanel"
              x:DataType="vm:WheelViewModel">
 
     <Design.DataContext>
@@ -138,6 +138,12 @@
                             <ComboBoxItem Content="Yes — reveal winner only" />
                             <ComboBoxItem Content="Yes — reveal all on win" />
                         </ComboBox>
+
+                        <Separator />
+
+                        <CheckBox IsChecked="{Binding PointerOnRight}"
+                                  Content="Pointer on right (3 o'clock)"
+                                  ToolTip.Tip="Moves the selector arrow to the right side; labels rotate with the wheel" />
 
                     </StackPanel>
                 </Expander>
@@ -402,6 +408,8 @@
                                                Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                         <CheckBox IsChecked="{Binding LogSpins}"
                                   Content="Log spins to file (./logs/spins.log)" />
+                        <CheckBox IsChecked="{Binding CapTo30Fps}"
+                                  Content="Cap frame rate to 30 FPS (lower-end PCs)" />
                     </StackPanel>
                 </Expander>
 

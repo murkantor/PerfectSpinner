@@ -1,6 +1,6 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 
-namespace GoldenSpinner.Models
+namespace PerfectSpinner.Models
 {
     /// <summary>
     /// Container for a complete wheel configuration.
@@ -35,6 +35,13 @@ namespace GoldenSpinner.Models
 
         // Logging
         public bool LogSpins { get; set; } = true;
+
+        // Performance
+        /// <summary>When true, animation and confetti timers run at ~30 fps instead of ~60 fps.</summary>
+        public bool CapTo30Fps { get; set; } = false;
+
+        /// <summary>When true, the pointer sits at 3 o'clock (right) and labels rotate with the wheel.</summary>
+        public bool PointerOnRight { get; set; } = false;
 
         // Border
         public int BorderColorStyle { get; set; } = 0; // 0 = white, 1 = black

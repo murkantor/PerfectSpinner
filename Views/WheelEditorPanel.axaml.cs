@@ -1,6 +1,6 @@
-using Avalonia.Controls;
+﻿using Avalonia.Controls;
 
-namespace GoldenSpinner.Views
+namespace PerfectSpinner.Views
 {
     public partial class WheelEditorPanel : UserControl
     {

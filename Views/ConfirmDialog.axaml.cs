@@ -1,7 +1,7 @@
-using Avalonia.Controls;
+﻿using Avalonia.Controls;
 using Avalonia.Interactivity;
 
-namespace GoldenSpinner.Views
+namespace PerfectSpinner.Views
 {
     /// <summary>
     /// Minimal yes/no confirmation dialog.

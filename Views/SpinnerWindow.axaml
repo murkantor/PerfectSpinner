@@ -1,10 +1,10 @@
-<Window xmlns="https://github.com/avaloniaui"
+﻿<Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:vm="using:GoldenSpinner.ViewModels"
-        xmlns:controls="using:GoldenSpinner.Controls"
-        x:Class="GoldenSpinner.Views.SpinnerWindow"
+        xmlns:vm="using:PerfectSpinner.ViewModels"
+        xmlns:controls="using:PerfectSpinner.Controls"
+        x:Class="PerfectSpinner.Views.SpinnerWindow"
         x:DataType="vm:MainWindowViewModel"
-        Title="SpinnerWheel — OBS Capture"
+        Title="PerfectSpinner — OBS Capture"
         Width="830" Height="830"
         MinWidth="300" MinHeight="300"
         Background="{Binding ActiveWheel.ChromaKeyColor, Converter={StaticResource HexColorToBrush}}">
@@ -24,7 +24,7 @@
 
         <!-- Wheel fills the entire window; Viewbox scales it uniformly -->
         <Viewbox Stretch="Uniform">
-            <controls:SpinnerWheelControl
+            <controls:PerfectSpinnerControl
                 Width="600" Height="600"
                 Slices="{Binding ActiveWheel.Slices}"
                 RotationAngle="{Binding ActiveWheel.CurrentRotation}"
@@ -47,7 +47,9 @@
                 ConfettiCount="{Binding ActiveWheel.ConfettiCount}"
                 ConfettiShapeMode="{Binding ActiveWheel.ConfettiShapeMode}"
                 ConfettiColorMode="{Binding ActiveWheel.ConfettiColorMode}"
-                ConfettiCustomColor="{Binding ActiveWheel.ConfettiCustomColor}" />
+                ConfettiCustomColor="{Binding ActiveWheel.ConfettiCustomColor}"
+                CapTo30Fps="{Binding ActiveWheel.CapTo30Fps}"
+                PointerOnRight="{Binding ActiveWheel.PointerOnRight}" />
         </Viewbox>
 
         <!-- Winner banner -->

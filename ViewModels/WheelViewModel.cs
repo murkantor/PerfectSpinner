@@ -91,6 +91,14 @@ namespace PerfectSpinner.ViewModels
 
         [ObservableProperty] private bool _logSpins = true;
 
+        // ── Performance ───────────────────────────────────────────────────────
+
+        /// <summary>When true, animation and confetti timers target ~30 fps instead of ~60 fps.</summary>
+        [ObservableProperty] private bool _capTo30Fps = false;
+
+        /// <summary>When true, the pointer sits at 3 o'clock and labels rotate with the wheel.</summary>
+        [ObservableProperty] private bool _pointerOnRight = false;
+
         // ── Winner display ────────────────────────────────────────────────────
 
         [ObservableProperty] private string _winnerMessageTemplate = "🎉  %t%!";
@@ -266,7 +274,7 @@ namespace PerfectSpinner.ViewModels
 
             _animTimer = new DispatcherTimer(DispatcherPriority.Render)
             {
-                Interval = TimeSpan.FromMilliseconds(16)
+                Interval = TimeSpan.FromMilliseconds(CapTo30Fps ? 33 : 16)
             };
             _animTimer.Tick += OnAnimationTick;
             _animTimer.Start();
@@ -310,7 +318,7 @@ namespace PerfectSpinner.ViewModels
 
             _animTimer = new DispatcherTimer(DispatcherPriority.Render)
             {
-                Interval = TimeSpan.FromMilliseconds(16)
+                Interval = TimeSpan.FromMilliseconds(CapTo30Fps ? 33 : 16)
             };
             _animTimer.Tick += OnAnimationTick;
             _animTimer.Start();
@@ -329,7 +337,8 @@ namespace PerfectSpinner.ViewModels
                 .ToList();
             if (activeSlices.Count == 0) return;
 
-            var pointerAngle = ((360.0 - CurrentRotation % 360.0) % 360.0 + 360.0) % 360.0;
+            double pointerOffset = PointerOnRight ? 90.0 : 0.0;
+            var pointerAngle = ((360.0 - CurrentRotation % 360.0 + pointerOffset) % 360.0 + 360.0) % 360.0;
             double totalWeight = UseWeightedSlices
                 ? activeSlices.Sum(s => s.Weight)
                 : activeSlices.Count;
@@ -613,6 +622,8 @@ namespace PerfectSpinner.ViewModels
             UseWeightedSlices     = UseWeightedSlices,
             GlobalWeight          = GlobalWeight,
             LogSpins              = LogSpins,
+            CapTo30Fps            = CapTo30Fps,
+            PointerOnRight        = PointerOnRight,
             WinnerMessageTemplate = WinnerMessageTemplate,
             DefaultSoundPath      = string.IsNullOrEmpty(DefaultSoundPath) ? null : DefaultSoundPath,
             BrightenWinner        = BrightenWinner,
@@ -654,6 +665,8 @@ namespace PerfectSpinner.ViewModels
             UseWeightedSlices     = layout.UseWeightedSlices;
             GlobalWeight          = Math.Clamp(layout.GlobalWeight, 1, 100);
             LogSpins              = layout.LogSpins;
+            CapTo30Fps            = layout.CapTo30Fps;
+            PointerOnRight        = layout.PointerOnRight;
             WinnerMessageTemplate = string.IsNullOrEmpty(layout.WinnerMessageTemplate)
                                     ? "🎉  %t%!" : layout.WinnerMessageTemplate;
             DefaultSoundPath      = layout.DefaultSoundPath;
@@ -758,7 +771,8 @@ namespace PerfectSpinner.ViewModels
             {
                 double tickTotalW = _activeTotalWeightCache;
 
-                double ptr = ((360.0 - CurrentRotation % 360.0) % 360.0 + 360.0) % 360.0;
+                double tickPointerOffset = PointerOnRight ? 90.0 : 0.0;
+                double ptr = ((360.0 - CurrentRotation % 360.0 + tickPointerOffset) % 360.0 + 360.0) % 360.0;
                 int currentSlice = tickActive.Count - 1;
                 double cumDeg2 = 0;
                 for (int i = 0; i < tickActive.Count; i++)

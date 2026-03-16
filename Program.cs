@@ -1,7 +1,7 @@
 ﻿using System;
 using Avalonia;
 
-namespace GoldenSpinner
+namespace PerfectSpinner
 {
     internal sealed class Program
     {
