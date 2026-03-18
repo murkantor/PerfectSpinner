@@ -14,6 +14,7 @@ A feature-rich spinner wheel desktop application built with **.NET 9** and **Ava
   - [Appearance](#appearance)
   - [Slices](#slices)
   - [Weights](#weights)
+  - [Troll Mode](#troll-mode)
   - [Winner Display & Confetti](#winner-display--confetti)
   - [Sounds](#sounds)
   - [Blackout Wheel](#blackout-wheel)
@@ -33,12 +34,15 @@ A feature-rich spinner wheel desktop application built with **.NET 9** and **Ava
 - **Unlimited wheels** — multiple wheel tabs, each fully independent
 - **Spin All** — fire every wheel simultaneously with one button
 - **Drag-to-spin** — click and drag the wheel in the capture window to send it spinning
+- **Chain triggers** — configure any slice to automatically spin a second wheel when it wins
+- **Troll mode** — probability-based surprise animations that play after the wheel stops
 - **Weighted slices** — probabilistic spinning with per-slice weights and undo
 - **Per-slice customisation** — label, colour, image (PNG/JPG), sound, winner message override
 - **Three image modes** — Static, Rotating, Upright
 - **Confetti burst** — particles in five shapes, rainbow or custom colour, or animated GIF
 - **Blackout mode** — hide slice contents until a winner is revealed
 - **Four independent audio channels** — spin-start, tick A, tick B, winner sounds never interrupt each other
+- **Master volume** — app-wide volume slider in the header controls all channels simultaneously
 - **OBS-ready** — chroma key background, hard-edge clip boundary, zero-focus-steal z-ordering
 - **Save / Load** — JSON (portable settings) or self-contained ZIP (bundles all assets)
 - **Spin log** — timestamped CSV-style log of every result
@@ -107,6 +111,10 @@ All settings below are per-wheel and saved with the layout.
 
 > **Spin All Wheels** — the button above the editor panel fires every wheel tab's spin simultaneously.
 
+#### Master Volume
+
+The **🔊 volume slider** in the top-right of the header controls the playback level for all four audio channels at once (0–100%). Adjusting it takes effect immediately, including on any tick sounds currently playing.
+
 #### Drag-to-Spin
 
 Click and drag anywhere inside the OBS capture window to rotate the wheel by hand. When you release, the wheel coasts to a stop using the same friction physics as a normal spin. The minimum release speed to trigger a spin is 30°/s.
@@ -125,6 +133,7 @@ Click and drag anywhere inside the OBS capture window to rotate the wheel by han
 | **Font Size** | 0 – 72 px | 0 | 0 = auto-scales with slice count; any other value is fixed |
 | **Label Colour** | White text / Black text | White text | Applies to all labels; border is the inverse colour |
 | **Borders** | White / Black | White | Outer ring and slice divider colour |
+| **Pointer Position** | Top / Right | Top | Moves the pointer triangle and the win-detection point to the top or the right side of the wheel |
 | **Chroma Key Colour** | Any hex colour | #00FF00 | SpinnerWindow background (set this in your OBS Chroma Key filter) |
 | **Blackout Wheel** | See [Blackout Wheel](#blackout-wheel) | Off | — |
 
@@ -158,6 +167,7 @@ Each slice in the list shows a checkbox (active/inactive toggle), a colour swatc
 | **Weight** | Relative probability when weighted mode is on (0 = excluded; see [Weights](#weights)) |
 | **Image** | PNG or JPG shown inside the slice; browse to assign, remove to clear |
 | **Sound** | WAV or MP3 played when this slice wins; overrides the wheel-level default sound |
+| **Chain Trigger** | Select another wheel from the dropdown; if this slice wins, that wheel automatically spins after a 1.5 s pause. Set to *— None —* to disable |
 | **Active** | Untick to exclude this slice from the wheel entirely |
 
 ---
@@ -176,6 +186,33 @@ When weighted mode is on:
 - Slices with weight 0 are excluded for that spin (set inactive automatically at spin start)
 - After each spin the winning slice's weight is decremented by 1 (min 0)
 - Weights of exactly 0 still render at a minimum 1° arc so they remain visible
+
+---
+
+### Troll Mode
+
+Troll Mode adds a chance for the wheel to perform a surprise animation after it stops — changing the result just before the winner is declared. Great for keeping live audiences on their toes.
+
+| Setting | Range | Default | Description |
+|---------|-------|---------|-------------|
+| **Troll Mode** | On / Off | Off | Enables the troll system for this wheel |
+| **Chance** | 0 – 100 | 30 | Percentage probability (per spin) that a troll animation fires |
+
+When a troll activates, one of nine effects is picked at random:
+
+| Effect | What happens |
+|--------|-------------|
+| **Little Tick** | One last hop — pointer moves back one slice |
+| **Second Thoughts** | Wheel reverses slightly then creeps forward one slice |
+| **Second Wind** | Sudden burst of energy — wheel accelerates for 2+ full extra rotations |
+| **Victory Lap** | Dignified extra full rotation, lands on exactly the same result |
+| **The Shakes** | Earthquake oscillation, then a dramatic snap to a different slice |
+| **Skip Ahead** | Smooth skip forward two slices |
+| **Boomerang** | Reverses partway then springs past the original result |
+| **Spin Doctors** | Three rapid full rotations with a slow dramatic finish |
+| **Big Slice** | A random slice inflates to half the wheel, holds, then Second Wind fires — repeats up to three times, stacking inflated slices, before all revert |
+
+> The final winner is always determined from wherever the wheel physically rests after all troll animations complete.
 
 ---
 
@@ -364,6 +401,8 @@ On load the ZIP is extracted to `%TEMP%\PerfectSpinner\<guid>\`. Asset paths in 
   "confettiCustomColor": "#FFD700",
   "logSpins": true,
   "capTo30Fps": false,
+  "trollMode": false,
+  "trollChance": 30,
   "slices": [
     {
       "id": "00000000-...",
@@ -373,7 +412,8 @@ On load the ZIP is extracted to `%TEMP%\PerfectSpinner\<guid>\`. Asset paths in 
       "isActive": true,
       "imagePath": null,
       "soundPath": null,
-      "winnerLabel": null
+      "winnerLabel": null,
+      "triggerWheelId": null
     }
   ]
 }
@@ -449,7 +489,8 @@ PerfectSpinner/
 │   ├── ViewModelBase.cs           – ObservableObject base (CommunityToolkit)
 │   ├── WheelSliceViewModel.cs     – Observable wrapper + cached colour + loaded bitmap
 │   ├── WheelViewModel.cs          – Per-wheel state, commands, spin animation, physics
-│   └── MainWindowViewModel.cs     – Wheel collection, tabs, Spin All
+│   ├── WheelChoiceItem.cs         – Display record for chain-trigger wheel selector
+│   └── MainWindowViewModel.cs     – Wheel collection, tabs, Spin All, chain routing
 ├── Views/
 │   ├── MainWindow.axaml           – Settings window (tab bar + editor panel)
 │   ├── MainWindow.axaml.cs        – Code-behind; service wiring, tab interactions
