@@ -13,6 +13,9 @@ namespace PerfectSpinner.Models
         public string Name { get; set; } = "My Wheel";
         public List<WheelSlice> Slices { get; set; } = new();
 
+        /// <summary>Stable identity for this wheel. Used by cross-wheel chain triggers.</summary>
+        public string WheelId { get; set; } = string.Empty;
+
         // Spin settings
         public double SpinDurationSeconds { get; set; } = 4.0;
         public int Friction { get; set; } = 5;
@@ -60,6 +63,13 @@ namespace PerfectSpinner.Models
         public bool BrightenWinner { get; set; } = false;
         public bool DarkenLosers { get; set; } = false;
         public bool InvertLoserText { get; set; } = false;
+
+        // Troll Mode
+        public bool TrollMode             { get; set; } = false;
+        public int  TrollChance           { get; set; } = 30;  // 0–100 %
+        public bool TrollGuaranteeEnabled { get; set; } = false;
+        /// <summary>0 = random, 1–8 = specific effect index.</summary>
+        public int  TrollForcedEffect     { get; set; } = 0;
 
         // Confetti
         public bool ShowConfetti { get; set; } = false;

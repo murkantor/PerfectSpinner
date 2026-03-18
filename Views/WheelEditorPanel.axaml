@@ -205,6 +205,68 @@
                     </StackPanel>
                 </Expander>
 
+                <!-- ── Troll Mode expander ───────────────────────────── -->
+                <Expander Header="🎭  Troll Mode" IsExpanded="False" HorizontalAlignment="Stretch">
+                    <StackPanel Spacing="8" Margin="0,6,0,0">
+
+                        <CheckBox IsChecked="{Binding TrollMode}"
+                                  Content="Enable Troll Mode"
+                                  ToolTip.Tip="When enabled, the wheel may pull a sneaky trick after stopping" />
+
+                        <TextBlock Text="After the wheel stops there is a chance it will surprise the viewer with an unexpected move before the final result is revealed."
+                                   FontSize="11" TextWrapping="Wrap"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                                   IsVisible="{Binding TrollMode}" />
+
+                        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8"
+                              IsVisible="{Binding TrollMode}">
+                            <TextBlock Grid.Column="0" Text="Chance:"
+                                       VerticalAlignment="Center" />
+                            <NumericUpDown Grid.Column="1"
+                                           Value="{Binding TrollChance}"
+                                           Minimum="0" Maximum="100" Increment="5"
+                                           FormatString="F0"
+                                           ToolTip.Tip="Probability (0–100%) that a troll fires on any given spin" />
+                        </Grid>
+
+                        <!-- ── Hidden troll testing section ───────────────── -->
+                        <StackPanel Spacing="6"
+                                    IsVisible="{Binding IsTrollSettingsVisible}">
+
+                            <Separator Margin="0,4,0,4" />
+
+                            <TextBlock Text="⚠  TROLL SETTINGS"
+                                       FontWeight="Bold" FontSize="12"
+                                       Foreground="OrangeRed" />
+                            <TextBlock Text="These options are for testing only and should be turned off before going live."
+                                       FontSize="11" TextWrapping="Wrap"
+                                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+
+                            <CheckBox IsChecked="{Binding TrollGuaranteeEnabled}"
+                                      Content="Guarantee troll fires every spin"
+                                      ToolTip.Tip="Overrides the Chance setting — troll fires on every single spin" />
+
+                            <TextBlock Text="Force specific effect:" Margin="0,4,0,0" />
+                            <ComboBox SelectedIndex="{Binding TrollForcedEffect}"
+                                      HorizontalAlignment="Stretch"
+                                      ToolTip.Tip="Force a specific troll to test it — set back to Random before going live">
+                                <ComboBoxItem Content="Random" />
+                                <ComboBoxItem Content="Little Tick" />
+                                <ComboBoxItem Content="Second Thoughts" />
+                                <ComboBoxItem Content="Second Wind" />
+                                <ComboBoxItem Content="Victory Lap" />
+                                <ComboBoxItem Content="The Shakes" />
+                                <ComboBoxItem Content="Skip Ahead" />
+                                <ComboBoxItem Content="Boomerang" />
+                                <ComboBoxItem Content="Spin Doctors" />
+                                <ComboBoxItem Content="Big Slice" />
+                            </ComboBox>
+
+                        </StackPanel>
+
+                    </StackPanel>
+                </Expander>
+
                 <!-- ── Winner Display expander ───────────────────────── -->
                 <Expander Header="Winner Display" IsExpanded="False" HorizontalAlignment="Stretch">
                     <StackPanel Spacing="8" Margin="0,6,0,0">
@@ -551,6 +613,19 @@
                                     IsVisible="{Binding SelectedSlice.SoundPath,
                                                 Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                         </StackPanel>
+
+                        <Separator Margin="0,6,0,2" />
+
+                        <TextBlock Text="If this slice wins, also spin:"
+                                   Margin="0,4,0,0" FontWeight="SemiBold" />
+                        <TextBlock Text="Automatically triggers another wheel after a short pause."
+                                   FontSize="11" TextWrapping="Wrap"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                        <ComboBox ItemsSource="{Binding OtherWheels}"
+                                  SelectedItem="{Binding SelectedSliceTriggerChoice, Mode=TwoWay}"
+                                  DisplayMemberBinding="{Binding Name}"
+                                  HorizontalAlignment="Stretch"
+                                  ToolTip.Tip="Select a wheel to spin automatically when this slice wins. Select '— None —' to disable." />
 
                     </StackPanel>
                 </ScrollViewer>

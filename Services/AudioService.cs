@@ -36,6 +36,24 @@ namespace PerfectSpinner.Services
         private WaveStream?   _tickReaderB;
         private string?       _tickPathB;
 
+        // ── Global volume ─────────────────────────────────────────────────────
+        private float _volume = 0.8f;
+
+        /// <summary>
+        /// Master volume for all channels. Range 0.0–1.0.
+        /// Active tick readers are updated immediately; other channels pick it up on next play.
+        /// </summary>
+        public float Volume
+        {
+            get => _volume;
+            set
+            {
+                _volume = Math.Clamp(value, 0f, 1f);
+                if (_tickReaderA is AudioFileReader ra) ra.Volume = _volume;
+                if (_tickReaderB is AudioFileReader rb) rb.Volume = _volume;
+            }
+        }
+
         // ── macOS / Linux playback (external process) ─────────────────────────
         private Process? _currentProcess;
 
@@ -76,7 +94,7 @@ namespace PerfectSpinner.Services
                 _spinStartWaveOut?.Dispose();
                 _spinStartReader?.Dispose();
 
-                _spinStartReader  = new AudioFileReader(path);
+                _spinStartReader  = new AudioFileReader(path) { Volume = _volume };
                 _spinStartWaveOut = new WaveOutEvent();
                 _spinStartWaveOut.Init(_spinStartReader);
                 _spinStartWaveOut.PlaybackStopped += (_, _) =>
@@ -109,9 +127,9 @@ namespace PerfectSpinner.Services
             try
             {
                 if (channelB)
-                    PlayTickChannel(path, ref _tickWaveOutB, ref _tickReaderB, ref _tickPathB);
+                    PlayTickChannel(path, ref _tickWaveOutB, ref _tickReaderB, ref _tickPathB, _volume);
                 else
-                    PlayTickChannel(path, ref _tickWaveOutA, ref _tickReaderA, ref _tickPathA);
+                    PlayTickChannel(path, ref _tickWaveOutA, ref _tickReaderA, ref _tickPathA, _volume);
             }
             catch (Exception ex)
             {
@@ -123,7 +141,8 @@ namespace PerfectSpinner.Services
             string path,
             ref WaveOutEvent? waveOut,
             ref WaveStream?   reader,
-            ref string?       loadedPath)
+            ref string?       loadedPath,
+            float             volume)
         {
             // Reload only when the path has changed.
             if (loadedPath != path)
@@ -135,10 +154,14 @@ namespace PerfectSpinner.Services
                 reader      = null;
                 loadedPath  = null;
 
-                reader    = new AudioFileReader(path);
-                waveOut   = new WaveOutEvent();
+                reader     = new AudioFileReader(path) { Volume = volume };
+                waveOut    = new WaveOutEvent();
                 waveOut.Init(reader);
                 loadedPath = path;
+            }
+            else if (reader is AudioFileReader ar)
+            {
+                ar.Volume = volume;
             }
 
             // Seek to the start and play from the beginning of the sound.
@@ -169,7 +192,8 @@ namespace PerfectSpinner.Services
         {
             // AudioFileReader handles both WAV and MP3 (and more) using Windows
             // built-in ACM/Media Foundation codecs — no external process needed.
-            _reader  = new AudioFileReader(path);
+            var reader  = new AudioFileReader(path) { Volume = _volume };
+            _reader  = reader;
             _waveOut = new WaveOutEvent();
             _waveOut.Init(_reader);
 

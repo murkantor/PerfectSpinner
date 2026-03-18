@@ -50,6 +50,12 @@ namespace PerfectSpinner.ViewModels
         /// </summary>
         [ObservableProperty] private bool _isActive = true;
 
+        /// <summary>
+        /// When set to a wheel's <see cref="WheelViewModel.WheelId"/>, winning this slice
+        /// automatically triggers a spin on that wheel. Null = no chain.
+        /// </summary>
+        [ObservableProperty] private string? _triggerWheelId;
+
 
         // ── Identity ──────────────────────────────────────────────────────────
 
@@ -62,12 +68,13 @@ namespace PerfectSpinner.ViewModels
         /// <summary>Constructs a ViewModel from a deserialized model and loads the bitmap.</summary>
         public WheelSliceViewModel(WheelSlice model)
         {
-            _label       = model.Label;
-            _colorHex    = model.ColorHex;
-            _soundPath   = model.SoundPath;
-            _winnerLabel = model.WinnerLabel;
-            _weight      = Math.Max(0.0, model.Weight);
-            _isActive    = model.IsActive;
+            _label          = model.Label;
+            _colorHex       = model.ColorHex;
+            _soundPath      = model.SoundPath;
+            _winnerLabel    = model.WinnerLabel;
+            _weight         = Math.Max(0.0, model.Weight);
+            _isActive       = model.IsActive;
+            _triggerWheelId = model.TriggerWheelId;
             // Pre-parse the cached color (backing field was set directly, no partial method fires).
             try   { CachedColor = Color.Parse(model.ColorHex); }
             catch { CachedColor = Color.FromRgb(0x80, 0x80, 0x80); }
@@ -107,14 +114,15 @@ namespace PerfectSpinner.ViewModels
         /// <summary>Creates a serialisable <see cref="WheelSlice"/> from the current state.</summary>
         public WheelSlice ToModel() => new()
         {
-            Id          = Id,
-            Label       = Label,
-            ColorHex    = ColorHex,
-            ImagePath   = ImagePath,
-            SoundPath   = SoundPath,
-            WinnerLabel = string.IsNullOrWhiteSpace(WinnerLabel) ? null : WinnerLabel,
-            Weight      = Weight,
-            IsActive    = IsActive
+            Id             = Id,
+            Label          = Label,
+            ColorHex       = ColorHex,
+            ImagePath      = ImagePath,
+            SoundPath      = SoundPath,
+            WinnerLabel    = string.IsNullOrWhiteSpace(WinnerLabel) ? null : WinnerLabel,
+            Weight         = Weight,
+            IsActive       = IsActive,
+            TriggerWheelId = TriggerWheelId,
         };
     }
 }

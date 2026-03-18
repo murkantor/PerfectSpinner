@@ -17,12 +17,29 @@
 
         <!-- ── Header ──────────────────────────────────────────────────── -->
         <StackPanel DockPanel.Dock="Top" Spacing="6" Margin="0,0,0,8">
-            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                <TextBlock Text="PerfectSpinner" FontSize="20" FontWeight="Bold" />
-                <TextBlock Text=" - By Murk17" FontSize="15" FontStyle="Italic"
-                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
-                           VerticalAlignment="Bottom" Margin="4,0,0,1" Padding="0,0,6,0" />
-            </StackPanel>
+            <Grid>
+                <!-- Left: title -->
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock Text="PerfectSpinner" FontSize="20" FontWeight="Bold" />
+                    <TextBlock Text=" - By Murk17" FontSize="15" FontStyle="Italic"
+                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                               VerticalAlignment="Bottom" Margin="4,0,0,1" Padding="0,0,6,0"
+                               PointerPressed="OnMurkCreditClicked" />
+                </StackPanel>
+                <!-- Right: master volume -->
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"
+                            VerticalAlignment="Center" Spacing="6">
+                    <TextBlock Text="🔊" VerticalAlignment="Center" FontSize="14"
+                               ToolTip.Tip="Master volume for all sounds" />
+                    <Slider Value="{Binding Volume}"
+                            Minimum="0" Maximum="100" Width="120"
+                            VerticalAlignment="Center"
+                            ToolTip.Tip="Master volume (0–100%)" />
+                    <TextBlock Text="{Binding Volume, StringFormat='{}{0}%'}"
+                               VerticalAlignment="Center" Width="38"
+                               ToolTip.Tip="Master volume" />
+                </StackPanel>
+            </Grid>
             <Separator />
         </StackPanel>
 

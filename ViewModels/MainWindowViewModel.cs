@@ -1,7 +1,10 @@
 ﻿using System;
 using System.Collections.ObjectModel;
+using System.Collections.Specialized;
+using System.ComponentModel;
 using System.Linq;
 using System.Text.RegularExpressions;
+using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using PerfectSpinner.Services;
@@ -22,6 +25,9 @@ namespace PerfectSpinner.ViewModels
 
         /// <summary>All wheels; bound to the custom tab bar's ListBox.</summary>
         public ObservableCollection<WheelViewModel> Wheels { get; } = new();
+
+        /// <summary>Master volume (0–100). Drives AudioService.Volume in real time.</summary>
+        [ObservableProperty] private int _volume = 80;
 
         [ObservableProperty]
         [NotifyPropertyChangedFor(nameof(ActiveWheel))]
@@ -45,8 +51,16 @@ namespace PerfectSpinner.ViewModels
             _audioService  = audioService;
             _logService    = logService;
 
+            // Apply initial volume so AudioService matches the default slider position.
+            _audioService.Volume = _volume / 100f;
+
+            // Subscribe before adding wheels so the first wheel is wired up automatically.
+            Wheels.CollectionChanged += OnWheelsCollectionChanged;
             Wheels.Add(new WheelViewModel(picker, layoutService, audioService, logService, "Wheel 1"));
         }
+
+        partial void OnVolumeChanged(int value) =>
+            _audioService.Volume = Math.Clamp(value, 0, 100) / 100f;
 
         /// <summary>Guard against ListBox momentarily reporting SelectedIndex = -1.</summary>
         partial void OnActiveWheelIndexChanged(int value)
@@ -119,6 +133,68 @@ namespace PerfectSpinner.ViewModels
             while (Wheels.Any(w => w.Name == $"{baseName} ({n})"))
                 n++;
             return $"{baseName} ({n})";
+        }
+
+        // ── Chain trigger plumbing ────────────────────────────────────────────
+
+        private void OnWheelsCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
+        {
+            if (e.OldItems != null)
+                foreach (WheelViewModel w in e.OldItems)
+                {
+                    w.PropertyChanged -= OnWheelPropertyChangedForChain;
+                    w.ChainTriggered  -= OnChainTriggered;
+                }
+            if (e.NewItems != null)
+                foreach (WheelViewModel w in e.NewItems)
+                {
+                    w.PropertyChanged += OnWheelPropertyChangedForChain;
+                    w.ChainTriggered  += OnChainTriggered;
+                }
+            UpdateOtherWheels();
+        }
+
+        private void OnWheelPropertyChangedForChain(object? sender, PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName == nameof(WheelViewModel.Name))
+                UpdateOtherWheels();
+        }
+
+        /// <summary>
+        /// Rebuilds every wheel's <see cref="WheelViewModel.OtherWheels"/> list so the
+        /// chain-trigger ComboBox always shows the current set of wheels.
+        /// </summary>
+        private void UpdateOtherWheels()
+        {
+            foreach (var wheel in Wheels)
+            {
+                wheel.OtherWheels.Clear();
+                wheel.OtherWheels.Add(WheelChoiceItem.NoneChoice);
+                foreach (var other in Wheels)
+                {
+                    if (other != wheel)
+                        wheel.OtherWheels.Add(new WheelChoiceItem(other.WheelId, other.Name));
+                }
+            }
+        }
+
+        /// <summary>
+        /// Called when a spin finishes and the winning slice has a chain trigger configured.
+        /// Waits briefly so the winner banner is visible, then switches to the target wheel
+        /// and spins it.
+        /// </summary>
+        private async void OnChainTriggered(string targetWheelId)
+        {
+            // Brief pause so the viewer can see the first wheel's winner before the second spins.
+            await Task.Delay(1500);
+
+            var target = Wheels.FirstOrDefault(w => w.WheelId == targetWheelId);
+            if (target == null) return;
+
+            ActiveWheelIndex = Wheels.IndexOf(target);
+
+            if (target.SpinWheelCommand.CanExecute(null))
+                target.SpinWheelCommand.Execute(null);
         }
     }
 }

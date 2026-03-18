@@ -81,20 +81,22 @@ namespace PerfectSpinner.Services
             {
                 zipSlices.Add(new WheelSlice
                 {
-                    Id          = slice.Id,
-                    Label       = slice.Label,
-                    ColorHex    = slice.ColorHex,
-                    Weight      = slice.Weight,
-                    IsActive    = slice.IsActive,
-                    WinnerLabel = slice.WinnerLabel,
-                    ImagePath   = AssignEntry(slice.ImagePath, "img", imageMap),
-                    SoundPath   = AssignEntry(slice.SoundPath, "snd", soundMap),
+                    Id             = slice.Id,
+                    Label          = slice.Label,
+                    ColorHex       = slice.ColorHex,
+                    Weight         = slice.Weight,
+                    IsActive       = slice.IsActive,
+                    WinnerLabel    = slice.WinnerLabel,
+                    TriggerWheelId = slice.TriggerWheelId,
+                    ImagePath      = AssignEntry(slice.ImagePath, "img", imageMap),
+                    SoundPath      = AssignEntry(slice.SoundPath, "snd", soundMap),
                 });
             }
 
             var zipLayout = new WheelLayout
             {
                 Name                  = layout.Name,
+                WheelId               = layout.WheelId,
                 Slices                = zipSlices,
                 SpinDurationSeconds   = layout.SpinDurationSeconds,
                 Friction              = layout.Friction,
@@ -118,6 +120,10 @@ namespace PerfectSpinner.Services
                 InvertLoserText       = layout.InvertLoserText,
                 BorderColorStyle      = layout.BorderColorStyle,
                 BlackoutWheelMode     = layout.BlackoutWheelMode,
+                TrollMode             = layout.TrollMode,
+                TrollChance           = layout.TrollChance,
+                TrollGuaranteeEnabled = layout.TrollGuaranteeEnabled,
+                TrollForcedEffect     = layout.TrollForcedEffect,
                 ShowConfetti          = layout.ShowConfetti,
                 ConfettiImagePath     = AssignEntry(layout.ConfettiImagePath, "img", imageMap),
                 ConfettiCount         = layout.ConfettiCount,

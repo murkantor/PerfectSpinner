@@ -28,6 +28,12 @@ namespace PerfectSpinner.ViewModels
         [ObservableProperty] private bool _isEditingName;
         private string _nameBeforeEdit = string.Empty;
 
+        /// <summary>
+        /// Stable per-session identity used by cross-wheel chain triggers.
+        /// Generated fresh each run; not restored from layout (so clones never share an ID).
+        /// </summary>
+        public string WheelId { get; } = Guid.NewGuid().ToString();
+
         // ── Services ──────────────────────────────────────────────────────────
 
         private readonly IFilePickerService _picker;
@@ -41,6 +47,7 @@ namespace PerfectSpinner.ViewModels
 
         [ObservableProperty]
         [NotifyPropertyChangedFor(nameof(HasSelectedSlice))]
+        [NotifyPropertyChangedFor(nameof(SelectedSliceTriggerChoice))]
         [NotifyCanExecuteChangedFor(nameof(RemoveSliceCommand))]
         [NotifyCanExecuteChangedFor(nameof(MoveUpCommand))]
         [NotifyCanExecuteChangedFor(nameof(MoveDownCommand))]
@@ -130,6 +137,24 @@ namespace PerfectSpinner.ViewModels
 
         public bool IsCustomConfettiColor => ConfettiColorMode == 1;
 
+        // ── Troll Mode ────────────────────────────────────────────────────────
+
+        [ObservableProperty] private bool _trollMode = false;
+        [ObservableProperty] private int  _trollChance = 30;
+
+        /// <summary>
+        /// Revealed by clicking "By Murk17" in the window header.
+        /// Toggled on all wheels simultaneously by MainWindow code-behind.
+        /// Not persisted — session-only UI state.
+        /// </summary>
+        [ObservableProperty] private bool _isTrollSettingsVisible = false;
+
+        /// <summary>When true, the troll fires on every spin (overrides TrollChance).</summary>
+        [ObservableProperty] private bool _trollGuaranteeEnabled = false;
+
+        /// <summary>0 = random, 1–8 = force a specific effect. Bound to ComboBox SelectedIndex.</summary>
+        [ObservableProperty] private int _trollForcedEffect = 0;
+
         // ── Save/Load feedback ───────────────────────────────────────────────
 
         [ObservableProperty] private string? _saveError;
@@ -143,6 +168,43 @@ namespace PerfectSpinner.ViewModels
         // ── Derived ───────────────────────────────────────────────────────────
 
         public bool HasSelectedSlice => SelectedSlice != null;
+
+        // ── Chain trigger ─────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Fired at the end of a spin when the winning slice has a TriggerWheelId set.
+        /// Handled by <see cref="MainWindowViewModel"/> which switches tabs and spins
+        /// the target wheel after a short delay.
+        /// </summary>
+        public event Action<string>? ChainTriggered;
+
+        /// <summary>
+        /// Target wheels available for the "If this slice wins, spin:" ComboBox.
+        /// Populated and kept up-to-date by <see cref="MainWindowViewModel"/>.
+        /// Always starts with <see cref="WheelChoiceItem.NoneChoice"/>.
+        /// </summary>
+        public ObservableCollection<WheelChoiceItem> OtherWheels { get; } = new();
+
+        /// <summary>
+        /// Gets or sets the chain-trigger choice for the currently selected slice.
+        /// Bound to the "If this slice wins, also spin:" ComboBox.
+        /// </summary>
+        public WheelChoiceItem? SelectedSliceTriggerChoice
+        {
+            get
+            {
+                if (SelectedSlice == null) return null;
+                var id = SelectedSlice.TriggerWheelId;
+                if (string.IsNullOrEmpty(id)) return WheelChoiceItem.NoneChoice;
+                return OtherWheels.FirstOrDefault(w => w.Id == id) ?? WheelChoiceItem.NoneChoice;
+            }
+            set
+            {
+                if (SelectedSlice == null) return;
+                SelectedSlice.TriggerWheelId = (value == null || value.Id == "") ? null : value.Id;
+                OnPropertyChanged(nameof(SelectedSliceTriggerChoice));
+            }
+        }
 
         // ── Weight snapshot ───────────────────────────────────────────────────
 
@@ -280,6 +342,7 @@ namespace PerfectSpinner.ViewModels
             _animTimer.Start();
 
             await _spinTcs.Task;
+            if (TrollMode) await TrollAsync();
             await FinalizeSpinAsync();
         }
 
@@ -325,6 +388,7 @@ namespace PerfectSpinner.ViewModels
             SpinWheelCommand.NotifyCanExecuteChanged();
 
             await _spinTcs.Task;
+            if (TrollMode) await TrollAsync();
             await FinalizeSpinAsync();
         }
 
@@ -375,6 +439,287 @@ namespace PerfectSpinner.ViewModels
                 : DefaultSoundPath;
             if (!string.IsNullOrEmpty(soundToPlay))
                 _audioService.PlaySound(soundToPlay);
+
+            // Chain trigger: automatically spin another wheel if this slice has one configured.
+            if (!string.IsNullOrEmpty(winnerSlice.TriggerWheelId))
+                ChainTriggered?.Invoke(winnerSlice.TriggerWheelId);
+        }
+
+        // ── Troll engine ──────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Optionally animates the wheel to a "trolled" position after stopping and
+        /// before the winner is read. FinalizeSpinAsync then picks whoever is under
+        /// the pointer at the new position.
+        /// </summary>
+        private async Task TrollAsync(int depth = 0)
+        {
+            if (_spinCancelled) return;
+
+            var rng = new Random();
+            bool shouldTroll = TrollGuaranteeEnabled || rng.Next(100) < TrollChance;
+            if (!shouldTroll) return;
+
+            var active = GetActiveSlicesCache();
+            if (active.Count < 2) return;
+
+            // Pick effect (0-based internally; TrollForcedEffect 0=random, 1-9=specific)
+            int picked = (TrollForcedEffect > 0) ? (TrollForcedEffect - 1) : rng.Next(9);
+
+            // Find current winner index in active slices
+            double pointerOffset = PointerOnRight ? 90.0 : 0.0;
+            double ptr = ((360.0 - CurrentRotation % 360.0 + pointerOffset) % 360.0 + 360.0) % 360.0;
+            double totalW = _activeTotalWeightCache;
+
+            int winnerIdx = active.Count - 1;
+            double cum = 0.0;
+            for (int i = 0; i < active.Count; i++)
+            {
+                double w = UseWeightedSlices ? Math.Max(1.0, active[i].Weight) : 1.0;
+                cum += (w / totalW) * 360.0;
+                if (ptr < cum) { winnerIdx = i; break; }
+            }
+
+            int prevIdx   = (winnerIdx - 1 + active.Count) % active.Count;
+            int nextIdx   = (winnerIdx + 1) % active.Count;
+            int skipIdx   = (winnerIdx + 2) % active.Count;
+            int randomIdx;
+            do { randomIdx = rng.Next(active.Count); } while (randomIdx == winnerIdx);
+
+            // Precompute absolute target rotations
+            double toPrev   = TrollTargetRotation(prevIdx,   true);
+            double toNext   = TrollTargetRotation(nextIdx,   false);
+            double toSkip   = TrollTargetRotation(skipIdx,   false);
+            double toRandom = TrollTargetRotation(randomIdx, true);
+
+            switch (picked)
+            {
+                case 0:
+                    // Little Tick — one last CW hop, pointer moves back one slice
+                    await TrollAnimateToAsync(toPrev, 0.9, TrollEaseOut);
+                    break;
+
+                case 1:
+                    // Second Thoughts — wheel reverses slightly then snaps, pointer creeps forward
+                    await TrollAnimateToAsync(toNext, 1.1, TrollEaseBackOut);
+                    break;
+
+                case 2:
+                    // Second Wind — suddenly accelerates forward 2+ full rotations, random result
+                {
+                    double target = toRandom + 2.0 * 360.0;
+                    while (target < CurrentRotation + 360.0) target += 360.0;
+                    await TrollAnimateToAsync(target, 2.2, TrollEaseOut);
+                    if (depth < 2) await TrollAsync(depth + 1);
+                    break;
+                }
+
+                case 3:
+                    // Victory Lap — true 360° that lands on exactly the same result
+                    await TrollAnimateToAsync(CurrentRotation + 360.0, 2.8, TrollEaseOut);
+                    break;
+
+                case 4:
+                    // The Shakes — earthquake oscillation then random snap
+                {
+                    double baseR = CurrentRotation;
+                    for (int i = 0; i < 9; i++)
+                    {
+                        double shake = 14.0 * (1.0 - i * 0.09);
+                        double shakeTarget = baseR + (i % 2 == 0 ? shake : -shake);
+                        await TrollAnimateToAsync(shakeTarget, 0.11, t => Math.Sin(t * Math.PI));
+                    }
+                    await TrollAnimateToAsync(toRandom, 0.45, TrollEaseOut);
+                    break;
+                }
+
+                case 5:
+                    // Skip Ahead — smooth CW skip two slices forward
+                    await TrollAnimateToAsync(toSkip, 1.4, TrollEaseInOut);
+                    break;
+
+                case 6:
+                    // Boomerang — reverses part-way, then springs forward past winner to prev slice
+                {
+                    double arc = (UseWeightedSlices
+                        ? Math.Max(1.0, active[winnerIdx].Weight) / totalW
+                        : 1.0 / active.Count) * 360.0;
+                    double midPoint = CurrentRotation - Math.Max(arc, 15.0) * 0.65;
+                    await TrollAnimateToAsync(midPoint, 0.42, TrollEaseOut);
+                    await Task.Delay(160);
+                    await TrollAnimateToAsync(toPrev, 1.05, TrollEaseIn);
+                    break;
+                }
+
+                case 7:
+                    // Spin Doctors — three extra fast full rotations, dramatic slow finish
+                {
+                    double target = toRandom + 3.0 * 360.0;
+                    while (target < CurrentRotation + 2.5 * 360.0) target += 360.0;
+                    await TrollAnimateToAsync(target, 3.8, t => 1.0 - Math.Pow(1.0 - t, 3));
+                    break;
+                }
+
+                case 8:
+                    // Big Slice — one slice inflates to half the wheel, holds, then reverts
+                    await BigSliceTrollAsync(active, rng);
+                    break;
+            }
+        }
+
+        /// <summary>
+        /// Inflates a random slice so it takes 50% of the visual arc, holds ~1.5 s,
+        /// then does a Second Wind spin. Recurses up to depth 2, keeping each prior
+        /// inflated slice alive — all big slices stay equal width (non-big total weight
+        /// each) and all revert together when the root call finishes.
+        /// </summary>
+        private async Task BigSliceTrollAsync(
+            List<WheelSliceViewModel> active,
+            Random rng,
+            int depth = 0,
+            List<(WheelSliceViewModel Slice, double OrigWeight)>? bigSlices = null)
+        {
+            bool isRoot      = bigSlices == null;
+            bool origWeighted = isRoot ? UseWeightedSlices : false;
+            bigSlices ??= new List<(WheelSliceViewModel, double)>();
+
+            try
+            {
+                if (active.Count == 0 || _spinCancelled) return;
+
+                // Pick a slice not already in the big pool.
+                var usedSet = new HashSet<WheelSliceViewModel>(bigSlices.Select(t => t.Slice));
+                var pool    = active.Where(s => !usedSet.Contains(s)).ToList();
+                if (pool.Count == 0) pool = active.ToList();
+
+                var bigSlice = pool[rng.Next(pool.Count)];
+                bigSlices.Add((bigSlice, bigSlice.Weight));
+
+                // All big slices get equal weight = sum of the remaining non-big weights.
+                // This keeps every big slice the same visual size as each other.
+                UseWeightedSlices = true;
+                double nonBigSum = active
+                    .Where(s => bigSlices.All(b => b.Slice != s))
+                    .Sum(s => Math.Max(1.0, s.Weight));
+                if (nonBigSum <= 0) nonBigSum = 1;
+                foreach (var (s, _) in bigSlices)
+                    s.Weight = nonBigSum;
+
+                await Task.Delay(1500);
+                if (_spinCancelled) return;
+
+                // Second Wind animation from current position.
+                var fresh = GetActiveSlicesCache();
+                if (fresh.Count >= 2)
+                {
+                    double pointerOffset = PointerOnRight ? 90.0 : 0.0;
+                    double ptr = ((360.0 - CurrentRotation % 360.0 + pointerOffset) % 360.0 + 360.0) % 360.0;
+                    double totalW = _activeTotalWeightCache;
+                    int wIdx = fresh.Count - 1;
+                    double cum = 0.0;
+                    for (int i = 0; i < fresh.Count; i++)
+                    {
+                        double w = UseWeightedSlices ? Math.Max(1.0, fresh[i].Weight) : 1.0;
+                        cum += (w / totalW) * 360.0;
+                        if (ptr < cum) { wIdx = i; break; }
+                    }
+                    int ri;
+                    do { ri = rng.Next(fresh.Count); } while (ri == wIdx);
+                    double swTarget = TrollTargetRotation(ri, true) + 2.0 * 360.0;
+                    while (swTarget < CurrentRotation + 360.0) swTarget += 360.0;
+                    await TrollAnimateToAsync(swTarget, 2.2, TrollEaseOut);
+                }
+
+                // Stack: add another inflated slice (keeps all previous ones inflated).
+                if (depth < 2 && !_spinCancelled)
+                    await BigSliceTrollAsync(GetActiveSlicesCache(), rng, depth + 1, bigSlices);
+            }
+            finally
+            {
+                // Root call reverts all inflated slices after all recursion completes.
+                if (isRoot)
+                {
+                    foreach (var (s, orig) in bigSlices)
+                        s.Weight = orig;
+                    UseWeightedSlices = origWeighted;
+                    InvalidateActiveCache();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Returns the wheel rotation value that places the pointer at the centre of
+        /// <paramref name="activeSliceIndex"/>. <paramref name="preferCW"/> controls which
+        /// direction is taken when the shortest path is ambiguous.
+        /// </summary>
+        private double TrollTargetRotation(int activeSliceIndex, bool preferCW)
+        {
+            var active = GetActiveSlicesCache();
+            if (active.Count == 0 || (uint)activeSliceIndex >= (uint)active.Count)
+                return CurrentRotation;
+
+            double totalW       = _activeTotalWeightCache;
+            double pointerOffset = PointerOnRight ? 90.0 : 0.0;
+
+            double cumDeg = 0.0;
+            for (int i = 0; i < activeSliceIndex; i++)
+            {
+                double w = UseWeightedSlices ? Math.Max(1.0, active[i].Weight) : 1.0;
+                cumDeg += (w / totalW) * 360.0;
+            }
+            double arc  = (UseWeightedSlices ? Math.Max(1.0, active[activeSliceIndex].Weight) : 1.0)
+                          / totalW * 360.0;
+            double targetPtr = cumDeg + arc / 2.0;
+
+            // R%360 that places the pointer at targetPtr
+            // pointerAngle = ((360 - R%360 + offset) % 360 + 360) % 360
+            // => R%360 = ((360 + offset - targetPtr) % 360 + 360) % 360
+            double targetMod  = ((360.0 + pointerOffset - targetPtr) % 360.0 + 360.0) % 360.0;
+            double currentMod = ((CurrentRotation % 360.0) + 360.0) % 360.0;
+
+            double delta = targetMod - currentMod;
+            if (delta >  180.0) delta -= 360.0;
+            if (delta < -180.0) delta += 360.0;
+
+            if (preferCW  && delta < 0) delta += 360.0;
+            if (!preferCW && delta > 0) delta -= 360.0;
+
+            return CurrentRotation + delta;
+        }
+
+        /// <summary>
+        /// Smoothly animates <see cref="CurrentRotation"/> to <paramref name="targetRotation"/>
+        /// over <paramref name="durationSeconds"/> using the provided <paramref name="easing"/>.
+        /// </summary>
+        private async Task TrollAnimateToAsync(
+            double targetRotation, double durationSeconds, Func<double, double> easing)
+        {
+            double startR = CurrentRotation;
+            double delta  = targetRotation - startR;
+            int    ms     = CapTo30Fps ? 33 : 16;
+            int    steps  = Math.Max(1, (int)(durationSeconds * 1000 / ms));
+
+            for (int i = 1; i <= steps; i++)
+            {
+                if (_spinCancelled) return;
+                double t = (double)i / steps;
+                CurrentRotation = startR + delta * easing(t);
+                await Task.Delay(TimeSpan.FromMilliseconds(ms));
+            }
+            CurrentRotation = targetRotation;
+        }
+
+        // ── Easing functions used by troll effects ────────────────────────────
+
+        private static double TrollEaseInOut(double t)  => t < 0.5 ? 2*t*t : 1 - 2*(1-t)*(1-t);
+        private static double TrollEaseOut(double t)    => 1 - (1-t)*(1-t)*(1-t);
+        private static double TrollEaseIn(double t)     => t * t * t;
+
+        /// <summary>Slightly overshoots then settles — "second thoughts" wobble.</summary>
+        private static double TrollEaseBackOut(double t)
+        {
+            const double c1 = 1.70158, c3 = c1 + 1;
+            return 1 + c3 * Math.Pow(t - 1, 3) + c1 * Math.Pow(t - 1, 2);
         }
 
         [RelayCommand]
@@ -608,6 +953,7 @@ namespace PerfectSpinner.ViewModels
         public WheelLayout ToLayout() => new WheelLayout
         {
             Name                  = Name,
+            WheelId               = WheelId,
             Slices                = Slices.Select(s => s.ToModel()).ToList(),
             SpinDurationSeconds   = (double)SpinDurationSeconds,
             Friction              = Friction,
@@ -631,6 +977,10 @@ namespace PerfectSpinner.ViewModels
             InvertLoserText       = InvertLoserText,
             BorderColorStyle      = BorderColorStyle,
             BlackoutWheelMode     = BlackoutWheelMode,
+            TrollMode             = TrollMode,
+            TrollChance           = TrollChance,
+            TrollGuaranteeEnabled = TrollGuaranteeEnabled,
+            TrollForcedEffect     = TrollForcedEffect,
             ShowConfetti          = ShowConfetti,
             ConfettiImagePath     = string.IsNullOrEmpty(ConfettiImagePath) ? null : ConfettiImagePath,
             ConfettiCount         = ConfettiCount,
@@ -675,6 +1025,10 @@ namespace PerfectSpinner.ViewModels
             InvertLoserText       = layout.InvertLoserText;
             BorderColorStyle      = Math.Clamp(layout.BorderColorStyle, 0, 1);
             BlackoutWheelMode     = Math.Clamp(layout.BlackoutWheelMode, 0, 2);
+            TrollMode             = layout.TrollMode;
+            TrollChance           = Math.Clamp(layout.TrollChance, 0, 100);
+            TrollGuaranteeEnabled = layout.TrollGuaranteeEnabled;
+            TrollForcedEffect     = Math.Clamp(layout.TrollForcedEffect, 0, 9);
             ShowConfetti          = layout.ShowConfetti;
             ConfettiImagePath     = layout.ConfettiImagePath;
             ConfettiCount         = Math.Clamp(layout.ConfettiCount == 0 ? 120 : layout.ConfettiCount, 1, 2000);

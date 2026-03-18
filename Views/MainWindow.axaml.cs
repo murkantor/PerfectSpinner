@@ -80,6 +80,17 @@ namespace PerfectSpinner.Views
             this.AddHandler(KeyDownEvent,   OnRenameKeyDown,   RoutingStrategies.Tunnel);
         }
 
+        // ── Troll settings reveal ─────────────────────────────────────────────
+
+        private void OnMurkCreditClicked(object? sender, Avalonia.Input.PointerPressedEventArgs e)
+        {
+            if (DataContext is not MainWindowViewModel vm) return;
+            if (!vm.ActiveWheel.TrollMode || vm.ActiveWheel.TrollChance != 17) return;
+            bool newState = !vm.ActiveWheel.IsTrollSettingsVisible;
+            foreach (var wheel in vm.Wheels)
+                wheel.IsTrollSettingsVisible = newState;
+        }
+
         // ── Tab context-menu handlers ─────────────────────────────────────────
 
         private void OnTabRenameClick(object? sender, RoutedEventArgs e)

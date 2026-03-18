@@ -33,5 +33,11 @@ namespace PerfectSpinner.Models
 
         /// <summary>User-toggled. True = participates in the wheel. False = excluded.</summary>
         public bool IsActive { get; set; } = true;
+
+        /// <summary>
+        /// When set, winning this slice automatically triggers a spin on the wheel with this ID.
+        /// Null = no chain trigger.
+        /// </summary>
+        public string? TriggerWheelId { get; set; }
     }
 }
