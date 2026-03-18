@@ -206,7 +206,7 @@
                 </Expander>
 
                 <!-- ── Troll Mode expander ───────────────────────────── -->
-                <Expander Header="🎭  Troll Mode" IsExpanded="False" HorizontalAlignment="Stretch">
+                <Expander Header="Troll Mode" IsExpanded="False" HorizontalAlignment="Stretch">
                     <StackPanel Spacing="8" Margin="0,6,0,0">
 
                         <CheckBox IsChecked="{Binding TrollMode}"
