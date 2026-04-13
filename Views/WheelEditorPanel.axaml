@@ -505,11 +505,14 @@
                                 ToolTip.Tip="Move slice down"
                                 Width="34" Height="30" />
                     </StackPanel>
+                    <TextBox Text="{Binding SliceSearchText}"
+                             Watermark="Search slices…"
+                             ToolTip.Tip="Filter slices by label" />
                 </StackPanel>
 
                 <!-- Slice list -->
                 <ListBox Grid.Row="1"
-                         ItemsSource="{Binding Slices}"
+                         ItemsSource="{Binding FilteredSlices}"
                          SelectedItem="{Binding SelectedSlice}"
                          MinHeight="120"
                          ScrollViewer.VerticalScrollBarVisibility="Auto">

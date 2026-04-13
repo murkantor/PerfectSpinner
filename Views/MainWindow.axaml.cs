@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Linq;
@@ -25,17 +25,19 @@ namespace PerfectSpinner.Views
     public partial class MainWindow : Window
     {
         private readonly SpinnerWindow _spinnerWindow;
+        private bool _forceClose = false;
 
         public MainWindow()
         {
             InitializeComponent();
 
             // Build the shared ViewModel with all required services.
-            var pickerService = new WindowFilePickerService(this);
-            var layoutService = new LayoutService();
-            var audioService  = new AudioService();
-            var logService    = new LogService();
-            var vm = new MainWindowViewModel(pickerService, layoutService, audioService, logService);
+            var pickerService      = new WindowFilePickerService(this);
+            var layoutService      = new LayoutService();
+            var audioService       = new AudioService();
+            var logService         = new LogService();
+            var appSettingsService = new AppSettingsService();
+            var vm = new MainWindowViewModel(pickerService, layoutService, audioService, logService, appSettingsService);
 
             DataContext = vm;
 
@@ -44,7 +46,7 @@ namespace PerfectSpinner.Views
             _spinnerWindow.Show();
 
             // ── Bidirectional close ───────────────────────────────────────────
-            Closing               += (_, _) => _spinnerWindow.Close();
+            Closing += OnMainWindowClosing;
             _spinnerWindow.Closed += (_, _) => Close();
 
             // ── Mutual z-raise — clicking either window brings both to front ──
@@ -52,7 +54,7 @@ namespace PerfectSpinner.Views
             _spinnerWindow.Activated += (_, _) => BringToFrontNoActivate(this);
 
             // ── Side-by-side centred layout on startup ────────────────────────
-            Opened += (_, _) => PositionWindowsSideBySide();
+            Opened += OnMainWindowOpened;
 
             // ── Tab rename: wire up existing wheels, then new ones ────────────
             foreach (var wheel in vm.Wheels)
@@ -78,6 +80,31 @@ namespace PerfectSpinner.Views
             // Commit on LostFocus (user clicks away) or Enter; cancel on Escape.
             this.AddHandler(LostFocusEvent, OnRenameLostFocus, RoutingStrategies.Bubble);
             this.AddHandler(KeyDownEvent,   OnRenameKeyDown,   RoutingStrategies.Tunnel);
+        }
+
+        // ── Open / close handlers ─────────────────────────────────────────────
+
+        private async void OnMainWindowOpened(object? sender, EventArgs e)
+        {
+            PositionWindowsSideBySide();
+
+            if (DataContext is MainWindowViewModel vm)
+                await vm.RestoreSessionAsync();
+        }
+
+        private async void OnMainWindowClosing(object? sender, WindowClosingEventArgs e)
+        {
+            if (_forceClose) return;
+            if (DataContext is not MainWindowViewModel vm) return;
+            if (!vm.SaveOnExit) return;
+
+            // Cancel this close event, save the session, then force-close.
+            e.Cancel = true;
+            await vm.AutoSaveSessionAsync();
+            _spinnerWindow.Closed -= (_, _) => Close(); // prevent double close
+            _forceClose = true;
+            _spinnerWindow.Close();
+            Close();
         }
 
         // ── Troll settings reveal ─────────────────────────────────────────────
@@ -228,18 +255,53 @@ namespace PerfectSpinner.Views
             var scale    = screen.Scaling;
             var workArea = screen.WorkingArea;
 
-            var settingsW = (int)(Width  * scale);
-            var settingsH = (int)(Height * scale);
+            // Convert work area from physical pixels to logical pixels.
+            var logicalW = workArea.Width  / scale;
+            var logicalH = workArea.Height / scale;
+
+            const double gap    = 16.0;
+            const double margin = 0.97; // leave 3% breathing room
+
+            // ── Resize windows to fit the work area ───────────────────────────
+
+            // Settings window height: clamp to available height.
+            if (Height > logicalH * margin)
+                Height = logicalH * margin;
+
+            // Spinner window: keep square; clamp to available height.
+            if (_spinnerWindow.Height > logicalH * margin)
+            {
+                var s = logicalH * margin;
+                _spinnerWindow.Width  = s;
+                _spinnerWindow.Height = s;
+            }
+
+            // If the two windows don't fit side-by-side, scale both down proportionally.
+            double totalW = Width + _spinnerWindow.Width + gap;
+            if (totalW > logicalW * margin)
+            {
+                double scaleFactor = (logicalW * margin - gap) / (Width + _spinnerWindow.Width);
+
+                Width = Math.Max(480, Width * scaleFactor);
+
+                var spinnerSize = Math.Max(300, _spinnerWindow.Width * scaleFactor);
+                _spinnerWindow.Width  = spinnerSize;
+                _spinnerWindow.Height = spinnerSize;
+            }
+
+            // ── Position side by side, centred ────────────────────────────────
+
+            var settingsW = (int)(Width                * scale);
+            var settingsH = (int)(Height               * scale);
             var spinnerW  = (int)(_spinnerWindow.Width  * scale);
             var spinnerH  = (int)(_spinnerWindow.Height * scale);
+            var gapPx     = (int)(gap                  * scale);
 
-            const int gap = 16;
-
-            var startX  = workArea.X + (workArea.Width - settingsW - spinnerW - gap) / 2;
-            var centerY = workArea.Y +  workArea.Height / 2;
+            var startX  = workArea.X + Math.Max(0, (workArea.Width - settingsW - spinnerW - gapPx) / 2);
+            var centerY = workArea.Y + workArea.Height / 2;
 
             Position                = new PixelPoint(startX,                   centerY - settingsH / 2);
-            _spinnerWindow.Position = new PixelPoint(startX + settingsW + gap, centerY - spinnerH  / 2);
+            _spinnerWindow.Position = new PixelPoint(startX + settingsW + gapPx, centerY - spinnerH  / 2);
         }
     }
 }

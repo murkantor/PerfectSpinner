@@ -1,12 +1,14 @@
-﻿using System;
+using System;
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.ComponentModel;
+using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using PerfectSpinner.Models;
 using PerfectSpinner.Services;
 
 namespace PerfectSpinner.ViewModels
@@ -18,10 +20,11 @@ namespace PerfectSpinner.ViewModels
     public partial class MainWindowViewModel : ViewModelBase
     {
         // ── Services (kept so AddWheelCommand can create new WheelViewModels) ──
-        private readonly IFilePickerService _picker;
-        private readonly LayoutService      _layoutService;
-        private readonly AudioService       _audioService;
-        private readonly LogService         _logService;
+        private readonly IFilePickerService  _picker;
+        private readonly LayoutService       _layoutService;
+        private readonly AudioService        _audioService;
+        private readonly LogService          _logService;
+        private readonly AppSettingsService  _appSettingsService;
 
         /// <summary>All wheels; bound to the custom tab bar's ListBox.</summary>
         public ObservableCollection<WheelViewModel> Wheels { get; } = new();
@@ -33,6 +36,22 @@ namespace PerfectSpinner.ViewModels
         [NotifyPropertyChangedFor(nameof(ActiveWheel))]
         private int _activeWheelIndex = 0;
 
+        // ── App-level settings ────────────────────────────────────────────────
+
+        /// <summary>When true, all wheels are auto-saved on close and restored on launch.</summary>
+        [ObservableProperty] private bool _saveOnExit = false;
+
+        /// <summary>
+        /// UI text scale multiplier (0.7 – 1.5, default 1.0).
+        /// Drives <see cref="UiBaseFontSize"/> which is bound to the root DockPanel's FontSize.
+        /// </summary>
+        [ObservableProperty]
+        [NotifyPropertyChangedFor(nameof(UiBaseFontSize))]
+        private double _uiTextScale = 1.0;
+
+        /// <summary>Base font size for the entire Settings window (14 × UiTextScale).</summary>
+        public double UiBaseFontSize => Math.Round(14.0 * UiTextScale, 1);
+
         /// <summary>
         /// The currently displayed wheel. Clamped so it never throws even if
         /// ActiveWheelIndex is momentarily -1 (ListBox deselection artefact).
@@ -41,15 +60,22 @@ namespace PerfectSpinner.ViewModels
             Wheels[Math.Clamp(ActiveWheelIndex, 0, Wheels.Count - 1)];
 
         public MainWindowViewModel(
-            IFilePickerService picker,
-            LayoutService layoutService,
-            AudioService audioService,
-            LogService logService)
+            IFilePickerService  picker,
+            LayoutService       layoutService,
+            AudioService        audioService,
+            LogService          logService,
+            AppSettingsService  appSettingsService)
         {
-            _picker        = picker;
-            _layoutService = layoutService;
-            _audioService  = audioService;
-            _logService    = logService;
+            _picker             = picker;
+            _layoutService      = layoutService;
+            _audioService       = audioService;
+            _logService         = logService;
+            _appSettingsService = appSettingsService;
+
+            // Restore persisted app settings.
+            var settings = _appSettingsService.Load();
+            _saveOnExit  = settings.SaveOnExit;
+            _uiTextScale = Math.Clamp(settings.UiTextScale, 0.7, 1.5);
 
             // Apply initial volume so AudioService matches the default slider position.
             _audioService.Volume = _volume / 100f;
@@ -62,12 +88,80 @@ namespace PerfectSpinner.ViewModels
         partial void OnVolumeChanged(int value) =>
             _audioService.Volume = Math.Clamp(value, 0, 100) / 100f;
 
+        partial void OnSaveOnExitChanged(bool value) => PersistAppSettings();
+        partial void OnUiTextScaleChanged(double value) => PersistAppSettings();
+
+        private void PersistAppSettings() =>
+            _appSettingsService.Save(new AppSettings
+            {
+                SaveOnExit  = SaveOnExit,
+                UiTextScale = UiTextScale,
+            });
+
         /// <summary>Guard against ListBox momentarily reporting SelectedIndex = -1.</summary>
         partial void OnActiveWheelIndexChanged(int value)
         {
             if (value < 0 && Wheels.Count > 0)
                 ActiveWheelIndex = 0;
         }
+
+        // ── Session save / restore ────────────────────────────────────────────
+
+        /// <summary>
+        /// Saves every wheel to %AppData%\PerfectSpinner\session\wheel-N.json.
+        /// Called on exit when <see cref="SaveOnExit"/> is true.
+        /// </summary>
+        public async Task AutoSaveSessionAsync()
+        {
+            var dir = AppSettingsService.SessionDirectory;
+            Directory.CreateDirectory(dir);
+
+            // Remove stale session files first.
+            foreach (var f in Directory.GetFiles(dir, "wheel-*.json"))
+                File.Delete(f);
+
+            for (int i = 0; i < Wheels.Count; i++)
+            {
+                var path = Path.Combine(dir, $"wheel-{i:D3}.json");
+                await _layoutService.SaveAsync(Wheels[i].ToLayout(), path);
+            }
+        }
+
+        /// <summary>
+        /// If session files exist and <see cref="SaveOnExit"/> is true, replaces the
+        /// default "Wheel 1" with the saved session. Called from MainWindow.Opened.
+        /// </summary>
+        public async Task RestoreSessionAsync()
+        {
+            if (!SaveOnExit) return;
+
+            var dir = AppSettingsService.SessionDirectory;
+            if (!Directory.Exists(dir)) return;
+
+            var files = Directory.GetFiles(dir, "wheel-*.json")
+                                 .OrderBy(f => f)
+                                 .ToArray();
+            if (files.Length == 0) return;
+
+            Wheels.Clear();
+            foreach (var file in files)
+            {
+                var layout = await _layoutService.LoadAsync(file);
+                if (layout == null) continue;
+
+                var wheel = new WheelViewModel(_picker, _layoutService, _audioService, _logService, layout.Name);
+                wheel.ApplyLayout(layout);
+                Wheels.Add(wheel);
+            }
+
+            // Ensure there is always at least one wheel.
+            if (Wheels.Count == 0)
+                Wheels.Add(new WheelViewModel(_picker, _layoutService, _audioService, _logService, "Wheel 1"));
+
+            ActiveWheelIndex = 0;
+        }
+
+        // ── Wheel management commands ─────────────────────────────────────────
 
         [RelayCommand]
         private void SpinAll()

@@ -10,26 +10,52 @@
         d:DesignWidth="940" d:DesignHeight="830"
         Icon="/Assets/avalonia-logo.ico"
         Title="PerfectSpinner — Settings"
-        MinWidth="640" MinHeight="480"
-        Width="940" Height="830">
+        MinWidth="788" MinHeight="744"
+        Width="940" Height="830"
+        FontSize="{Binding UiBaseFontSize}">
 
     <DockPanel Margin="12">
 
         <!-- ── Header ──────────────────────────────────────────────────── -->
         <StackPanel DockPanel.Dock="Top" Spacing="6" Margin="0,0,0,8">
             <Grid>
-                <!-- Left: title -->
-                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                    <TextBlock Text="PerfectSpinner" FontSize="20" FontWeight="Bold" />
-                    <TextBlock Text=" - By Murk17" FontSize="15" FontStyle="Italic"
-                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
-                               VerticalAlignment="Bottom" Margin="4,0,0,1" Padding="0,0,6,0"
-                               PointerPressed="OnMurkCreditClicked" />
+                <!-- Left: title + text size slider (pinned left so resizing doesn't move it) -->
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Spacing="12">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="PerfectSpinner" FontSize="20" FontWeight="Bold" />
+                        <TextBlock Text=" - By Murk17" FontSize="15" FontStyle="Italic"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                                   VerticalAlignment="Bottom" Margin="4,0,0,1" Padding="0,0,6,0"
+                                   PointerPressed="OnMurkCreditClicked" />
+                    </StackPanel>
+                    <!-- Text size slider -->
+                    <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center"
+                                ToolTip.Tip="Adjust UI text size (0.7× – 1.5×)">
+                        <TextBlock Text="Aa" FontSize="10" VerticalAlignment="Center" Opacity="0.6" />
+                        <Slider Value="{Binding UiTextScale}"
+                                Minimum="0.7" Maximum="1.5"
+                                TickFrequency="0.05" IsSnapToTickEnabled="True"
+                                Width="90" VerticalAlignment="Center" />
+                        <TextBlock Text="Aa" FontSize="17" VerticalAlignment="Center" Opacity="0.6" />
+                    </StackPanel>
                 </StackPanel>
-                <!-- Right: master volume -->
+                <!-- Right: save on exit + master volume -->
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"
-                            VerticalAlignment="Center" Spacing="6">
-                    <TextBlock Text="🔊" VerticalAlignment="Center" FontSize="14"
+                            VerticalAlignment="Center" Spacing="12">
+
+                    <!-- Save on exit -->
+                    <CheckBox Content="Save session on exit"
+                              IsChecked="{Binding SaveOnExit}"
+                              VerticalAlignment="Center"
+                              ToolTip.Tip="Auto-save all wheel layouts on close and restore them on next launch" />
+
+                    <!-- Separator -->
+                    <Separator Width="1" HorizontalAlignment="Center"
+                               Background="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                               Opacity="0.3" Height="20" />
+
+                    <!-- Master volume -->
+                    <TextBlock Text="🔊" VerticalAlignment="Center"
                                ToolTip.Tip="Master volume for all sounds" />
                     <Slider Value="{Binding Volume}"
                             Minimum="0" Maximum="100" Width="120"
@@ -111,7 +137,7 @@
                 Content="🎡  Spin All Wheels"
                 Command="{Binding SpinAllCommand}"
                 HorizontalAlignment="Stretch"
-                FontSize="15" FontWeight="SemiBold"
+                FontWeight="SemiBold"
                 Padding="0,8" Margin="0,0,0,6"
                 ToolTip.Tip="Spin every wheel tab simultaneously" />
 

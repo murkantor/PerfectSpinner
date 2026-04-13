@@ -46,6 +46,15 @@ namespace PerfectSpinner.ViewModels
         [ObservableProperty] private ObservableCollection<WheelSliceViewModel> _slices = new();
 
         [ObservableProperty]
+        [NotifyPropertyChangedFor(nameof(FilteredSlices))]
+        private string _sliceSearchText = string.Empty;
+
+        public IEnumerable<WheelSliceViewModel> FilteredSlices =>
+            string.IsNullOrWhiteSpace(SliceSearchText)
+                ? Slices
+                : Slices.Where(s => s.Label.Contains(SliceSearchText, StringComparison.OrdinalIgnoreCase));
+
+        [ObservableProperty]
         [NotifyPropertyChangedFor(nameof(HasSelectedSlice))]
         [NotifyPropertyChangedFor(nameof(SelectedSliceTriggerChoice))]
         [NotifyCanExecuteChangedFor(nameof(RemoveSliceCommand))]
@@ -1187,12 +1196,15 @@ namespace PerfectSpinner.ViewModels
                 foreach (WheelSliceViewModel s in e.NewItems)
                     s.PropertyChanged += OnSlicePropertyChangedForCache;
             InvalidateActiveCache();
+            OnPropertyChanged(nameof(FilteredSlices));
         }
 
         private void OnSlicePropertyChangedForCache(object? sender, PropertyChangedEventArgs e)
         {
             if (e.PropertyName is nameof(WheelSliceViewModel.IsActive) or nameof(WheelSliceViewModel.Weight))
                 InvalidateActiveCache();
+            if (e.PropertyName is nameof(WheelSliceViewModel.Label) && !string.IsNullOrWhiteSpace(SliceSearchText))
+                OnPropertyChanged(nameof(FilteredSlices));
         }
 
         private void FinishSpin()
